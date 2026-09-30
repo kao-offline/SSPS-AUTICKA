@@ -22,7 +22,7 @@ async function main() {
         let manifest;
         if (command==='update') {
           if (!pluginName || /[/\\]|\.\./.test(pluginName)) throw new Error('A valid plugin name is required');
-          manifest=JSON.parse(await fs.readFile(path.resolve(__dirname,'../test-plugin-files',pluginName,'manifest.json'),'utf8'));
+          manifest=JSON.parse((await fs.readFile(path.resolve(__dirname,'../test-plugin-files',pluginName,'manifest.json'),'utf8')).replace(/^\uFEFF/,''));
         } else {
           const url=await client.query('context:getFileUrl',{fileId:plugin.manifestFileId});
           const response=await fetch(url);

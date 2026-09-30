@@ -1,3 +1,4 @@
+import { ManagementHeader } from '@/components/management-header';
 import { useAuthToken } from "@convex-dev/auth/react";
 ﻿import React, { useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
@@ -69,7 +70,6 @@ async function sha256Hex(input: string): Promise<string> {
 const EXPOSE_CMD =
   "python -m lockedin_data_server.server --dashboard https://YOUR-DASHBOARD --expose";
 
-const STEPS = ["Connect server", "Upload module", "Install module"];
 
 export const ServersPage: React.FC<PageProps> = () => {
   const authToken = useAuthToken();
@@ -152,49 +152,24 @@ export const ServersPage: React.FC<PageProps> = () => {
   };
 
   return (
-    <div className="w-full max-w-5xl mx-auto flex flex-col gap-5 p-4 md:p-8">
-      {/* Header + stepper */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <h1 className="text-2xl font-bold tracking-tight">Servers</h1>
-          <Button size="sm" variant="flat" onPress={() => setShowSetup((v) => !v)}>
-            {showSetup ? "Hide setup" : "Connect a server"}
-          </Button>
-        </div>
-        <div className="flex items-center gap-2">
-          {STEPS.map((label, i) => (
-            <React.Fragment key={label}>
-              <div className="flex items-center gap-2">
-                <div
-                  className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold ${
-                    i === 0 ? "bg-primary text-white" : "bg-default-100 text-default-400"
-                  }`}
-                >
-                  {i + 1}
-                </div>
-                <span className={`text-xs font-medium ${i === 0 ? "text-foreground" : "text-default-400"}`}>
-                  {label}
-                </span>
-              </div>
-              {i < STEPS.length - 1 && <div className="flex-1 h-px bg-default-200 min-w-4" />}
-            </React.Fragment>
-          ))}
-        </div>
-      </div>
+    <div className="management-page">
+      <ManagementHeader title="Servers" summary={<>
+        <span>{connectedRows.length} connected</span>
+        {pendingRows.length > 0 && <Chip size="sm" color="warning" variant="flat">{pendingRows.length} waiting</Chip>}
+      </>} actions={<Button color="primary" startContent={<FaPlug />} onPress={() => setShowSetup(value => !value)} aria-expanded={showSetup}>{showSetup ? 'Close setup' : 'Connect server'}</Button>} />
 
       {showSetup && (
         <Card className="border border-primary/30 bg-primary/5">
           <CardBody className="gap-3">
-            <p className="text-sm">Run this on the on-site PC (needs Python + Node.js):</p>
+            <p className="text-sm">Run on the server PC:</p>
             <div className="flex gap-2 items-center bg-default-100 border border-default-200 rounded-xl p-3 font-mono text-xs break-all">
-              <span className="flex-1 select-all">{EXPOSE_CMD}</span>
+              <span className="flex-1 select-all">{EXPOSE_CMD.replace("https://YOUR-DASHBOARD", typeof window === "undefined" ? "https://li.kaooffline.top" : window.location.origin)}</span>
               <Button isIconOnly size="sm" variant="light" onPress={copyCmd}>
                 {copied ? <FaCheck className="text-success" /> : <FaCopy />}
               </Button>
             </div>
             <p className="text-xs text-default-500">
-              It prints a bind key → the PC appears below under “Waiting”. Paste the key, name it, done.
-              Then upload zips in Marketplace and install them in Server Plugins.
+              Paste the printed bind key when the server appears below.
             </p>
           </CardBody>
         </Card>
@@ -203,20 +178,20 @@ export const ServersPage: React.FC<PageProps> = () => {
       {/* Waiting */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-default-500">Waiting to connect</h2>
+          <h2 className="text-base font-semibold text-foreground">Pending connections</h2>
           {(pendingRows.length > 0) && (
             <Chip size="sm" variant="flat" color="warning">{pendingRows.length}</Chip>
           )}
         </div>
         {!pending ? (
-          <div className="flex items-center gap-2 text-sm text-default-400">
+          <div className="flex items-center gap-2 text-sm text-default-500">
             <Spinner size="sm" /> Looking for new servers…
           </div>
         ) : pendingRows.length === 0 ? (
-          <Card className="border border-dashed border-default-300">
+          <Card className="management-panel border-dashed">
             <CardBody className="py-6 text-center">
-              <FaPlug className="mx-auto text-2xl text-default-300 mb-2" />
-              <p className="text-sm text-default-500">No new servers. Start one with the command above.</p>
+              <FaPlug className="mx-auto text-2xl text-default-500 mb-2" />
+              <p className="text-sm text-default-500">No servers waiting to connect.</p>
             </CardBody>
           </Card>
         ) : (
@@ -227,7 +202,7 @@ export const ServersPage: React.FC<PageProps> = () => {
                 <div className="flex-1 min-w-0">
                   <div className="font-mono text-xs truncate">{p.serverInstanceId}</div>
                   <div className="text-[11px] text-default-500">
-                    {p.publicIp || "unknown IP"} · knocking {timeAgo(p.lastSeen)}
+                    {p.publicIp || "unknown IP"} · seen {timeAgo(p.lastSeen)}
                     {p.tunnelUrl ? " · tunnel ready" : ""}
                   </div>
                 </div>
@@ -249,14 +224,14 @@ export const ServersPage: React.FC<PageProps> = () => {
           <Chip size="sm" variant="flat" color="default">{connectedRows.length}</Chip>
         </div>
         {!servers ? (
-          <div className="flex items-center gap-2 text-sm text-default-400">
+          <div className="flex items-center gap-2 text-sm text-default-500">
             <Spinner size="sm" /> Loading…
           </div>
         ) : connectedRows.length === 0 ? (
           <Card className="border border-dashed border-default-300">
             <CardBody className="py-6 text-center">
-              <FaServer className="mx-auto text-2xl text-default-300 mb-2" />
-              <p className="text-sm text-default-500">Nothing connected yet. Connect your first server above.</p>
+              <FaServer className="mx-auto text-2xl text-default-500 mb-2" />
+              <p className="text-sm text-default-500">No connected servers.</p>
             </CardBody>
           </Card>
         ) : (
@@ -264,7 +239,7 @@ export const ServersPage: React.FC<PageProps> = () => {
             const id = String(s._id);
             const live = !!s.tunnelUrl;
             return (
-              <Card key={s._id} className="border border-default-200">
+              <Card key={s._id} className="management-panel">
                 <CardBody className="gap-2 py-3">
                   <div className="flex items-center gap-3">
                     <span className={`w-2 h-2 rounded-full shrink-0 ${s.status === "online" ? "bg-success" : "bg-default-300"}`} />

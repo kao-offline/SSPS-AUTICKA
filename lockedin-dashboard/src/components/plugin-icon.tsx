@@ -4,6 +4,7 @@ import React from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { ImageIcon } from 'lucide-react';
+import { useTheme } from '@/lib/use-theme';
 
 interface PluginIconProps {
   pluginName?: string;
@@ -22,9 +23,10 @@ export function PluginIcon({
   className = '',
   imageClassName = '',
 }: PluginIconProps) {
+  const { theme: selectedTheme } = useTheme();
   const iconUrl = useQuery(
     api.context.getPluginIconUrl,
-    pluginName ? { pluginName, theme } : 'skip',
+    pluginName ? { pluginName, theme: theme ?? selectedTheme } : 'skip',
   );
 
   if (svgMarkup) {

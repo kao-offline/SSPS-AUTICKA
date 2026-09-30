@@ -1,4 +1,5 @@
-﻿import React, { useEffect, useState } from 'react';
+import { ManagementHeader } from '@/components/management-header';
+﻿import React, { useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
@@ -82,6 +83,8 @@ export const ApiKeysPage: React.FC<PageProps> = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [pluginTabSelection, setSelectedPluginTab] = useState<string>('');
   const [step, setStep] = useState(1);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'revoked'>('all');
 
   const { isOpen, onOpen, onClose } = useDisclosure();
   const { isOpen: isViewOpen, onOpen: onViewOpen, onClose: onViewClose } = useDisclosure();
@@ -104,7 +107,8 @@ export const ApiKeysPage: React.FC<PageProps> = () => {
   const deleteKey = useMutation(api.apiKeys.deleteKey);
 
   const keys = keysData ?? [];
-  const selectedPluginTab = pluginTabSelection || pluginsData?.[0]?.name || '';
+  const apiPlugins = pluginsData?.filter(plugin => (plugin.apiEndpoints?.length ?? 0) > 0) ?? [];
+  const selectedPluginTab = apiPlugins.some(plugin => plugin.name === pluginTabSelection) ? pluginTabSelection : apiPlugins[0]?.name || '';
 
   const showAlert = (message: string) => {
     setAlertMessage(message);
@@ -229,54 +233,25 @@ export const ApiKeysPage: React.FC<PageProps> = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const filteredKeys = keys.filter(key => key.name.toLowerCase().includes(searchTerm.toLowerCase()) && (statusFilter === 'all' || key.isActive === (statusFilter === 'active')));
   const activeKeys = keys.filter((key) => key.isActive).length;
   const revokedKeys = keys.filter((key) => !key.isActive).length;
 
   return (
-    <div className="w-full flex flex-col gap-6 p-4 md:p-8">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-            <div className="bg-primary/10 p-2 rounded-xl">
-              <FaKey className="text-primary text-xl" />
-            </div>
-            API Keys
-          </h1>
-          <div className="flex items-center gap-3 flex-wrap">
-            <p className="text-default-500 text-sm">Manage API access for integrations and IoT devices</p>
-            <div className="flex items-center gap-2">
-              <Chip size="sm" variant="flat" color="default">{keys.length} total</Chip>
-              <Chip size="sm" variant="flat" color="success">{activeKeys} active</Chip>
-              {revokedKeys > 0 && <Chip size="sm" variant="flat" color="danger">{revokedKeys} revoked</Chip>}
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            color="primary"
-            startContent={<FaPlus />}
-            onPress={() => {
-              resetForm();
-              setIsEditMode(false);
-              onOpen();
-            }}
-            className="shadow-lg shadow-primary/20 font-semibold"
-          >
-            New API Key
-          </Button>
-          {revokedKeys > 0 && (
-            <Button color="danger" variant="flat" startContent={<FaTrash />} onPress={handleDeleteAllRevoked} className="font-semibold">
-              Delete Revoked
-            </Button>
-          )}
-        </div>
-      </div>
+    <div className="management-page">
+      <ManagementHeader title="API keys" summary={<>
+        <span>{activeKeys} active</span>
+        {revokedKeys > 0 && <span>&middot; {revokedKeys} revoked</span>}
+      </>} actions={<>
+        {revokedKeys > 0 && <Button variant="bordered" onPress={handleDeleteAllRevoked}>Clear revoked</Button>}
+        <Button color="primary" startContent={<FaPlus />} onPress={() => { resetForm(); setIsEditMode(false); onOpen(); }}>Create key</Button>
+      </>} />
 
       {newKey && (
         <Card className="border border-success/30 bg-success/5">
           <CardBody className="gap-4">
             <div className="flex items-center gap-2 text-success font-semibold">
-              <FaCheck /> Key created - save it now, you will not see it again
+              <FaCheck /> Key created - save it before closing
             </div>
             <div className="flex gap-2 items-center bg-default-100 border border-default-200 rounded-xl p-3 font-mono text-sm break-all">
               <span className="flex-1 select-all">{newKey}</span>
@@ -285,26 +260,28 @@ export const ApiKeysPage: React.FC<PageProps> = () => {
               </Button>
             </div>
             <Button color="success" variant="flat" onClick={() => setNewKey(null)} fullWidth>
-              Done - I saved it
+              Done
             </Button>
           </CardBody>
         </Card>
       )}
 
-      <Card className="border border-default-200 shadow-sm">
+      <Card className="management-panel">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-divider p-4">
+          <Input aria-label="Search API keys" placeholder="Search keys" size="sm" variant="bordered" isClearable value={searchTerm} onValueChange={setSearchTerm} className="w-full sm:max-w-64" />
+          <div className="flex gap-1" role="group" aria-label="Key status">
+            {(['all', 'active', 'revoked'] as const).map(status => <Button key={status} size="sm" variant={statusFilter === status ? 'flat' : 'light'} color={statusFilter === status ? 'primary' : 'default'} aria-pressed={statusFilter === status} onPress={() => setStatusFilter(status)} className="capitalize">{status}</Button>)}
+          </div>
+        </div>
         <CardBody className="p-0">
-          {keys.length === 0 ? (
+          {!keysData ? <p role="status" className="p-8 text-sm text-default-500">Loading keys...</p> : keys.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 gap-4">
               <div className="bg-default-100 p-5 rounded-full">
-                <FaKey className="text-4xl text-default-300" />
+                <FaKey className="text-4xl text-default-500" />
               </div>
               <div className="text-center">
                 <p className="font-semibold text-default-600">No API keys yet</p>
-                <p className="text-sm text-default-400 mt-1">Create a key to integrate with external apps and IoT devices</p>
               </div>
-              <Button color="primary" startContent={<FaPlus />} onPress={() => { resetForm(); setIsEditMode(false); onOpen(); }}>
-                Create your first key
-              </Button>
             </div>
           ) : (
             <Table
@@ -323,14 +300,14 @@ export const ApiKeysPage: React.FC<PageProps> = () => {
                 <TableColumn>LAST USED</TableColumn>
                 <TableColumn align="end">ACTIONS</TableColumn>
               </TableHeader>
-              <TableBody>
-                {keys.map((key) => (
+              <TableBody emptyContent="No matching keys">
+                {filteredKeys.map((key) => (
                   <TableRow key={key._id} className="hover:bg-default-50 transition-colors">
                     <TableCell>
                       <div className="flex flex-col gap-0.5">
                         <span className="flex items-center gap-2 font-semibold text-foreground">{key.name}{key.kind === 'SERVER_MODULE' ? <Chip size="sm" variant="flat" color="secondary">SERVER</Chip> : null}</span>
-                        {key.description && <span className="text-xs text-default-400 max-w-[220px] truncate">{key.description}</span>}
-                        <span className="text-tiny text-default-300">
+                        {key.description && <span className="text-xs text-default-500 max-w-[220px] truncate">{key.description}</span>}
+                        <span className="text-tiny text-default-500">
                           Created {timeAgo(key.createdAt)}
                           {key.rateLimit ? ` | ${key.rateLimit} req/min` : ''}
                         </span>
@@ -348,7 +325,7 @@ export const ApiKeysPage: React.FC<PageProps> = () => {
                           {key.blockedEndpoints && key.blockedEndpoints.length > 0 && <><span> | </span><span className="text-danger">{key.blockedEndpoints.length}</span> blocked</>}
                         </span>
                       ) : (
-                        <span className="text-sm text-default-400">All access</span>
+                        <span className="text-sm text-default-500">All access</span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -389,7 +366,7 @@ export const ApiKeysPage: React.FC<PageProps> = () => {
             <div className="flex items-center gap-2">
               {[1, 2, 3].map((current) => (
                 <React.Fragment key={current}>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${current === step ? 'bg-primary text-white shadow-md shadow-primary/30' : current < step ? 'bg-success text-white' : 'bg-default-100 text-default-400'}`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${current === step ? 'bg-primary text-primary-foreground shadow-md shadow-primary/30' : current < step ? 'bg-success text-success-foreground' : 'bg-default-100 text-default-500'}`}>
                     {current < step ? <FaCheck size={10} /> : current}
                   </div>
                   {current < 3 && <div className={`flex-1 h-0.5 rounded transition-all ${current < step ? 'bg-success' : 'bg-default-200'}`} />}
@@ -401,7 +378,7 @@ export const ApiKeysPage: React.FC<PageProps> = () => {
                 <FaLock className="text-primary text-sm" />
                 {isEditMode ? 'Edit API Key' : 'New API Key'} - Step {step} of 3
               </div>
-              <p className="text-tiny font-normal text-default-400 mt-0.5">
+              <p className="text-tiny font-normal text-default-500 mt-0.5">
                 {step === 1 ? 'Name and describe your key' : step === 2 ? 'Choose which endpoints this key can call' : 'Review and confirm'}
               </p>
             </div>
@@ -409,32 +386,34 @@ export const ApiKeysPage: React.FC<PageProps> = () => {
 
           {step === 1 && (
             <ModalBody className="py-6 flex flex-col gap-5">
-              <Input label="Key Name" placeholder="e.g. Gate Controller, Parking API" variant="bordered" value={formData.name} onValueChange={(value) => setFormData({ ...formData, name: value })} isRequired description="Give this key a descriptive name" startContent={<FaKey className="text-default-400 text-sm" />} />
-              <Textarea label="Description" placeholder="What is this key for? Where is it deployed?" variant="bordered" value={formData.description} onValueChange={(value) => setFormData({ ...formData, description: value })} minRows={2} description="Optional - add notes about this key's purpose" />
-              <Input label="Rate Limit (requests/minute)" type="number" variant="bordered" placeholder="0 for unlimited" value={String(formData.rateLimit)} onValueChange={(value) => setFormData({ ...formData, rateLimit: parseInt(value, 10) || 0 })} description="Throttle how many requests this key can make per minute" />
+              <Input label="Name" placeholder="e.g. Gate controller" variant="bordered" value={formData.name} onValueChange={(value) => setFormData({ ...formData, name: value })} isRequired startContent={<FaKey className="text-default-500 text-sm" />} />
+              <Textarea label="Description" placeholder="What is this key for? Where is it deployed?" variant="bordered" value={formData.description} onValueChange={(value) => setFormData({ ...formData, description: value })} minRows={2}  />
+              <Input label="Rate Limit (requests/minute)" type="number" variant="bordered" placeholder="0 for unlimited" value={String(formData.rateLimit)} onValueChange={(value) => setFormData({ ...formData, rateLimit: parseInt(value, 10) || 0 })}  />
             </ModalBody>
           )}
 
           {step === 2 && (
             <ModalBody className="py-6">
               <p className="text-sm text-default-500 mb-3">Select which plugin endpoints this key can access</p>
-              {pluginsData && pluginsData.length > 0 ? (
-                <div className="flex gap-0 border border-default-200 rounded-xl overflow-hidden" style={{ height: '360px' }}>
-                  <div className="w-52 border-r border-default-200 overflow-y-auto bg-default-50">
-                    {pluginsData.map((plugin: any) => {
+              {apiPlugins.length > 0 ? (
+                <div className="flex flex-col sm:flex-row border border-default-200 rounded-xl overflow-hidden max-h-[480px]">
+                  <div className="w-full sm:w-48 shrink-0 border-b sm:border-b-0 sm:border-r border-default-200 overflow-y-auto max-h-36 sm:max-h-none bg-default-50">
+                    {apiPlugins.map((plugin) => {
                       const endpoints = plugin?.apiEndpoints || [];
                       const enabled = endpoints.filter((endpoint: string) => formData.allowedEndpoints.includes(`${plugin.name}/${endpoint}`)).length;
                       const allSelected = enabled === endpoints.length && endpoints.length > 0;
                       const partiallySelected = enabled > 0 && enabled < endpoints.length;
 
                       return (
-                        <div key={plugin._id} className={`border-b border-default-200 ${selectedPluginTab === plugin.name ? 'bg-default-100' : 'hover:bg-default-100'}`}>
-                          <button type="button" onClick={() => setSelectedPluginTab(plugin.name)} className="w-full px-4 py-3 text-left text-sm flex items-center justify-between gap-2">
+                        <div key={plugin._id} className={`flex items-center pr-3 border-b border-default-200 ${selectedPluginTab === plugin.name ? 'bg-default-100' : 'hover:bg-default-100'}`}>
+                          <button type="button" onClick={() => setSelectedPluginTab(plugin.name)} className="flex-1 min-w-0 px-4 py-3 text-left text-sm flex items-center justify-between gap-2">
                             <div className="flex-1 min-w-0">
                               <p className="font-semibold text-foreground truncate">{plugin.name}</p>
-                              <p className="text-xs text-default-400">{endpoints.length} endpoints | {enabled} enabled</p>
+                              <p className="text-xs text-default-500">{endpoints.length} endpoints | {enabled} enabled</p>
                             </div>
+                          </button>
                             <Checkbox
+                              aria-label={`Enable all ${plugin.name} endpoints`}
                               isSelected={allSelected}
                               isIndeterminate={partiallySelected}
                               size="sm"
@@ -452,7 +431,6 @@ export const ApiKeysPage: React.FC<PageProps> = () => {
                                 }
                               }}
                             />
-                          </button>
                         </div>
                       );
                     })}
@@ -460,17 +438,17 @@ export const ApiKeysPage: React.FC<PageProps> = () => {
 
                   <div className="flex-1 p-4 overflow-y-auto">
                     {selectedPluginTab ? (() => {
-                      const selectedPlugin = pluginsData.find((plugin: any) => plugin.name === selectedPluginTab);
+                      const selectedPlugin = apiPlugins.find((plugin) => plugin.name === selectedPluginTab);
                       const endpoints = selectedPlugin?.apiEndpoints || [];
                       if (endpoints.length === 0) {
-                        return <p className="text-sm text-default-400 text-center py-12">No endpoints for this plugin</p>;
+                        return <p className="text-sm text-default-500 text-center py-12">No endpoints for this plugin</p>;
                       }
 
                       return (
                         <div className="flex flex-col gap-3">
                           <div>
                             <p className="font-semibold text-foreground">{selectedPluginTab}</p>
-                            <p className="text-xs text-default-400">{endpoints.filter((endpoint: string) => formData.allowedEndpoints.includes(`${selectedPluginTab}/${endpoint}`)).length}/{endpoints.length} enabled</p>
+                            <p className="text-xs text-default-500">{endpoints.filter((endpoint: string) => formData.allowedEndpoints.includes(`${selectedPluginTab}/${endpoint}`)).length}/{endpoints.length} enabled</p>
                           </div>
                           {endpoints.map((endpoint: string, index: number) => {
                             const endpointKey = `${selectedPluginTab}/${endpoint}`;
@@ -479,9 +457,10 @@ export const ApiKeysPage: React.FC<PageProps> = () => {
                               <div key={index} className={`flex items-center justify-between p-3 rounded-lg border transition-all ${isEnabled ? 'bg-success/5 border-success/30' : 'bg-default-50 border-default-200 hover:border-default-300'}`}>
                                 <div>
                                   <p className="text-sm font-medium text-foreground">{endpoint}</p>
-                                  <p className="text-xs text-default-400 font-mono">/api/{selectedPluginTab}/{endpoint}</p>
+                                  <p className="text-xs text-default-500 font-mono">/api/{selectedPluginTab}/{endpoint}</p>
                                 </div>
                                 <Checkbox
+                                  aria-label={`Allow ${endpointKey}`}
                                   isSelected={isEnabled}
                                   size="lg"
                                   color="success"
@@ -497,11 +476,11 @@ export const ApiKeysPage: React.FC<PageProps> = () => {
                           })}
                         </div>
                       );
-                    })() : <p className="text-sm text-default-400 text-center py-12">Select a plugin to manage its endpoints</p>}
+                    })() : <p className="text-sm text-default-500 text-center py-12">Select a plugin to manage its endpoints</p>}
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-default-400 text-center py-8">No plugins available in the system</p>
+                <p className="text-sm text-default-500 text-center py-8">No registered API endpoints. Publish a plugin with API endpoints first.</p>
               )}
             </ModalBody>
           )}
@@ -588,7 +567,7 @@ export const ApiKeysPage: React.FC<PageProps> = () => {
                     { label: 'Endpoints', value: viewKey.allowedEndpoints?.length ?? 'All' },
                   ].map(({ label, value }) => (
                     <div key={label} className="bg-default-50 border border-default-200 rounded-lg p-3">
-                      <p className="text-default-400 text-xs mb-1">{label}</p>
+                      <p className="text-default-500 text-xs mb-1">{label}</p>
                       <p className="font-semibold">{value}</p>
                     </div>
                   ))}

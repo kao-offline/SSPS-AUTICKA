@@ -361,7 +361,10 @@ export class PluginSDK {
       return 'light';
     }
 
-    // Check if dark mode class is on html element
+    const selectedTheme = document.documentElement.dataset.theme;
+    if (selectedTheme === 'light' || selectedTheme === 'dark') return selectedTheme;
+
+    // Compatibility with hosts that use only a theme class.
     if (document.documentElement.classList.contains('dark')) {
       return 'dark';
     }
@@ -390,7 +393,7 @@ export class PluginSDK {
     // Watch for class changes on html element
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ['class'],
+      attributeFilter: ['class', 'data-theme'],
     });
 
     // Watch for system preference changes

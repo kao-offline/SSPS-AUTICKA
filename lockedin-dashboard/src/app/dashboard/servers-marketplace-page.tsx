@@ -1,3 +1,4 @@
+import { ManagementHeader } from '@/components/management-header';
 ﻿import React, { useMemo, useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -6,7 +7,6 @@ import {
   Button,
   Card,
   CardBody,
-  CardHeader,
   Chip,
   Modal,
   ModalBody,
@@ -145,38 +145,20 @@ export const ServersMarketplacePage: React.FC<PageProps> = () => {
   };
 
   return (
-    <div className="w-full flex flex-col gap-6 p-4 md:p-8">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-3xl font-bold tracking-tight">Server Marketplace</h1>
-          <p className="text-default-500 text-sm">
-            Upload server module zips here. Uploading does not install them on any server.
-          </p>
-        </div>
-        <Button color="secondary" startContent={<FaUpload />} onPress={onOpen}>
-          Upload .zip
-        </Button>
-      </div>
+    <div className="management-page">
+      <ManagementHeader title="Module library" summary={<span>{rows.length} modules</span>} actions={<Button color="primary" startContent={<FaUpload />} onPress={onOpen}>Upload module</Button>} />
 
-      <Card className="border border-default-200">
-        <CardHeader className="flex items-center justify-between">
-          <div className="flex flex-col">
-            <div className="text-lg font-semibold">Uploaded modules</div>
-            <div className="text-xs text-default-500">Available to install on bound servers</div>
-          </div>
-          <Chip size="sm" variant="flat" color="default">
-            {rows.length} total
-          </Chip>
-        </CardHeader>
-        <CardBody>
+      <Card className="management-panel">
+
+        <CardBody className="p-0 overflow-x-auto">
           {!marketplace ? (
             <div className="flex items-center justify-center min-h-[240px]">
               <Spinner size="lg" label="Loading marketplace..." color="primary" labelColor="primary" />
             </div>
           ) : rows.length === 0 ? (
-            <div className="text-sm text-default-500">No server modules uploaded yet.</div>
+            <div className="text-sm text-default-500 p-8 text-center">No modules uploaded yet.</div>
           ) : (
-            <Table aria-label="Marketplace modules" className="min-w-full">
+            <Table aria-label="Marketplace modules" removeWrapper className="min-w-full">
               <TableHeader>
                 <TableColumn>MODULE</TableColumn>
                 <TableColumn>PERMISSIONS</TableColumn>
@@ -204,7 +186,7 @@ export const ServersMarketplacePage: React.FC<PageProps> = () => {
                           <div key={ep} className="font-mono text-[11px] text-default-500">{ep}</div>
                         ))}
                         {m.allowedEndpoints.length > 4 && (
-                          <div className="text-[11px] text-default-400">+{m.allowedEndpoints.length - 4} more</div>
+                          <div className="text-[11px] text-default-500">+{m.allowedEndpoints.length - 4} more</div>
                         )}
                       </div>
                     </TableCell>
@@ -234,7 +216,7 @@ export const ServersMarketplacePage: React.FC<PageProps> = () => {
                           <Button
                             size="sm"
                             variant="flat"
-                            color="secondary"
+                            color="primary"
                             onPress={() => askActivate(m)}
                           >
                             Activate
@@ -261,7 +243,7 @@ export const ServersMarketplacePage: React.FC<PageProps> = () => {
 
       <Modal isOpen={isOpen} onClose={onClose} classNames={appModalClassNames}>
         <ModalContent>
-          <ModalHeader>Upload server module (.zip)</ModalHeader>
+          <ModalHeader>Upload module</ModalHeader>
           <ModalBody className="space-y-3">
             <div className="text-sm text-default-500">
               Upload a zip that contains <span className="font-mono">server-manifest.json</span>.
@@ -270,7 +252,7 @@ export const ServersMarketplacePage: React.FC<PageProps> = () => {
               type="file"
               accept=".zip,application/zip"
               onChange={(e) => setZipFile(e.target.files?.[0] || null)}
-              className="block w-full text-sm text-default-500 file:mr-4 file:rounded file:border-0 file:bg-white/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-white/15"
+              className="management-file-input"
             />
             {zipFile && (
               <div className="text-xs text-default-500">

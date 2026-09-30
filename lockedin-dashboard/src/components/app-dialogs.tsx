@@ -12,10 +12,10 @@ import {
 import { AlertTriangle, Info } from 'lucide-react';
 
 export const appModalClassNames = {
-  base: 'border border-default-200 bg-content1 text-foreground shadow-2xl shadow-black/10 backdrop-blur-xl dark:border-white/10 dark:bg-[rgba(10,15,30,0.94)] dark:text-white dark:shadow-black/40',
-  header: 'border-b border-default-200 text-foreground dark:border-white/10 dark:text-white',
-  body: 'text-default-700 dark:text-white/88',
-  footer: 'border-t border-default-200 dark:border-white/10',
+  base: 'border border-divider bg-content1 text-foreground shadow-2xl shadow-black/20',
+  header: 'border-b border-divider text-foreground',
+  body: 'text-foreground',
+  footer: 'border-t border-divider',
 };
 
 interface AppAlertDialogProps {

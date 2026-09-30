@@ -1,3 +1,4 @@
+import { ManagementHeader } from '@/components/management-header';
 ﻿import React, { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -172,18 +173,13 @@ export const ServersPluginsPage: React.FC<PageProps> = () => {
   };
 
   return (
-    <div className="w-full flex flex-col gap-6 p-4 md:p-8">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-3xl font-bold tracking-tight">Server Plugins</h1>
-          <p className="text-default-500 text-sm">Install marketplace modules onto a specific on-site server.</p>
-        </div>
-      </div>
+    <div className="management-page">
+      <ManagementHeader title="Installed modules" />
 
-      <Card className="border border-default-200">
+      <Card className="management-panel">
         <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="text-lg font-semibold">Installed on</div>
+          <div className="flex items-center gap-3 flex-wrap w-full md:w-auto">
+            <div className="text-sm font-semibold">Server</div>
             {!servers ? (
               <Spinner size="sm" color="primary" />
             ) : (
@@ -194,7 +190,7 @@ export const ServersPluginsPage: React.FC<PageProps> = () => {
                   const first = Array.from(keys)[0];
                   setSelectedServerId(first ? (first as any) : null);
                 }}
-                className="min-w-[260px]"
+                className="w-full sm:w-64"
                 size="sm"
                 variant="bordered"
               >
@@ -213,26 +209,26 @@ export const ServersPluginsPage: React.FC<PageProps> = () => {
           </div>
 
           <Button
-            color="secondary"
+            color="primary"
             startContent={<FaPlus />}
             onPress={onAddOpen}
             isDisabled={!selectedServerId}
           >
-            Add plugin
+            Install module
           </Button>
         </CardHeader>
         <Divider />
         <CardBody>
           {!selectedServerId ? (
-            <div className="text-sm text-default-500">Select a server to manage its installed modules.</div>
+            <div className="text-sm text-default-500">Choose a server.</div>
           ) : !modules ? (
             <div className="flex items-center justify-center min-h-[220px]">
               <Spinner size="lg" label="Loading installed modules..." color="primary" labelColor="primary" />
             </div>
           ) : installedRows.length === 0 ? (
-            <div className="text-sm text-default-500">No modules installed on this server.</div>
+            <div className="text-sm text-default-500">No modules installed.</div>
           ) : (
-            <Table aria-label="Installed server modules" className="min-w-full">
+            <Table aria-label="Installed server modules" removeWrapper className="min-w-full">
               <TableHeader>
                 <TableColumn>MODULE</TableColumn>
                 <TableColumn>PERMISSIONS</TableColumn>
@@ -259,7 +255,7 @@ export const ServersPluginsPage: React.FC<PageProps> = () => {
                           <div key={ep} className="font-mono text-[11px] text-default-500">{ep}</div>
                         ))}
                         {m.allowedEndpoints.length > 3 && (
-                          <div className="text-[11px] text-default-400">+{m.allowedEndpoints.length - 3} more</div>
+                          <div className="text-[11px] text-default-500">+{m.allowedEndpoints.length - 3} more</div>
                         )}
                       </div>
                     </TableCell>
@@ -305,7 +301,7 @@ export const ServersPluginsPage: React.FC<PageProps> = () => {
 
       <Modal isOpen={isAddOpen} onClose={onAddClose} size="lg" classNames={appModalClassNames}>
         <ModalContent>
-          <ModalHeader>Add plugin from marketplace</ModalHeader>
+          <ModalHeader>Install module</ModalHeader>
           <ModalBody>
             {!marketplace ? (
               <div className="flex items-center justify-center min-h-[220px]">
@@ -313,12 +309,12 @@ export const ServersPluginsPage: React.FC<PageProps> = () => {
               </div>
             ) : marketplaceOptions.length === 0 ? (
               <div className="text-sm text-default-500">
-                Marketplace is empty. Upload a server module zip in the Marketplace page first.
+                No modules available. Upload one to the module library.
               </div>
             ) : (
               <div className="space-y-3">
                 {marketplaceOptions.map((m) => (
-                  <Card key={m._id} className="border border-default-200">
+                  <Card key={m._id} className="management-panel">
                     <CardBody className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                       <div className="flex flex-col gap-1">
                         <div className="font-semibold">{m.name}</div>
@@ -363,9 +359,6 @@ export const ServersPluginsPage: React.FC<PageProps> = () => {
               onValueChange={setSettingsText}
               className="font-mono"
             />
-            <div className="text-xs text-default-500">
-              This config is sent to the on-site server and written to the module config file.
-            </div>
           </ModalBody>
           <ModalFooter>
             <Button variant="light" onPress={onSettingsClose}>

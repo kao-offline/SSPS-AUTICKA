@@ -13,6 +13,7 @@ import styles from './dashboard.module.css';
 import Image from 'next/image';
 import { DashboardSidebar } from '@/components/dashboard-sidebar';
 import { PluginIcon } from '@/components/plugin-icon';
+import { useTheme } from '@/lib/use-theme';
 
 interface UserData {
 
@@ -45,30 +46,7 @@ export default function DashboardPage() {
   const [activePage, setActivePage] = useState<string>('welcome');
   const [pluginsLoaded, setPluginsLoaded] = useState(false);
   const [authVerified, setAuthVerified] = useState(false);
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-
-  // Load theme from preference
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('dashboard-theme') as 'dark' | 'light';
-    if (savedTheme) {
-      setTheme(savedTheme);
-      if (savedTheme === 'light') document.body.classList.add('light-mode');
-    } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
-      setTheme('light');
-      document.body.classList.add('light-mode');
-    }
-  }, []);
-
-  const toggleTheme = () => {
-    const newTheme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(newTheme);
-    localStorage.setItem('dashboard-theme', newTheme);
-    if (newTheme === 'light') {
-      document.body.classList.add('light-mode');
-    } else {
-      document.body.classList.remove('light-mode');
-    }
-  };
+  const { theme, toggleTheme } = useTheme();
 
   // NEW: Check if user is approved to access dashboard
   useEffect(() => {
@@ -355,7 +333,7 @@ export default function DashboardPage() {
             fontSize: '40px',
             marginBottom: '12px',
             fontFamily: 'JetBrains Mono, monospace',
-            color: 'rgba(255,255,255,0.92)',
+            color: 'var(--text-primary)',
             fontWeight: 'bold',
             textTransform: 'uppercase',
             letterSpacing: '3px'
@@ -365,7 +343,7 @@ export default function DashboardPage() {
           <h2 style={{
             fontSize: '18px',
             marginBottom: '24px',
-            color: 'rgba(140,190,255,0.75)',
+            color: 'var(--accent-blue)',
             fontFamily: 'JetBrains Mono, monospace',
             fontWeight: 400
           }}>
@@ -375,12 +353,12 @@ export default function DashboardPage() {
             <div style={{
               fontSize: '14px',
               lineHeight: '1.6',
-              color: 'rgba(255,255,255,0.4)',
+              color: 'var(--text-muted)',
               fontFamily: 'JetBrains Mono, monospace'
             }}>
-              <p><strong style={{ color: 'rgba(220,242,255,0.75)' }}>Role:</strong> {userData.role || 'User'}</p>
+              <p><strong style={{ color: 'var(--text-primary)' }}>Role:</strong> {userData.role || 'User'}</p>
               {userData.createdAt && (
-                <p><strong style={{ color: 'rgba(220,242,255,0.75)' }}>Member since:</strong> {new Date(userData.createdAt).toLocaleDateString()}</p>
+                <p><strong style={{ color: 'var(--text-primary)' }}>Member since:</strong> {new Date(userData.createdAt).toLocaleDateString()}</p>
               )}
             </div>
           )}
@@ -401,13 +379,13 @@ export default function DashboardPage() {
       }}>
         <h2 style={{
           fontSize: '28px',
-          color: 'rgba(255,255,255,0.6)',
+          color: 'var(--text-primary)',
           fontFamily: 'JetBrains Mono, monospace',
           fontWeight: 400
         }}>Page not found: {activePage}</h2>
         <p style={{
           fontSize: '13px',
-          color: 'rgba(255,255,255,0.3)',
+          color: 'var(--text-muted)',
           fontFamily: 'JetBrains Mono, monospace',
           marginTop: '12px'
         }}>Available pages: {navItems.map(item => item.id).join(', ')}</p>
@@ -425,8 +403,8 @@ export default function DashboardPage() {
         height: '100vh',
         fontFamily: "'SF Pro', -apple-system, system-ui, sans-serif",
         fontSize: '15px',
-        color: 'rgba(255,255,255,0.45)',
-        backgroundColor: '#0a0f1e'
+        color: 'var(--text-muted)',
+        backgroundColor: 'var(--bg-app)'
       }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{
@@ -463,7 +441,7 @@ export default function DashboardPage() {
 
       {/* Sidebar using HeroUI component */}
       <DashboardSidebar
-        logoSrc="/media/logo-v2.svg"
+        logoSrc="/media/lockedin.svg"
         navItems={navItems}
         activePage={activePage}
         onNavigation={setActivePage}
@@ -495,6 +473,15 @@ export default function DashboardPage() {
       {/* Main Content */}
       <div className={styles.mainContent}>
         <div className={styles.contentContainer}>
+          {['admin-servers', 'admin-server-marketplace', 'admin-server-plugins'].includes(activePage) && (
+            <nav aria-label="Server sections" className="management-server-tabs px-4 pt-5 md:px-8">
+              {[
+                ['admin-servers', 'Connections'],
+                ['admin-server-marketplace', 'Module library'],
+                ['admin-server-plugins', 'Installed modules'],
+              ].map(([id, label]) => <button key={id} type="button" aria-current={activePage === id ? 'page' : undefined} onClick={() => setActivePage(id)}>{label}</button>)}
+            </nav>
+          )}
           {renderActivePage()}
         </div>
       </div>

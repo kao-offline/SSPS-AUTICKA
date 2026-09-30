@@ -1,3 +1,4 @@
+import { ManagementHeader } from '@/components/management-header';
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useAction, useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
@@ -371,7 +372,7 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
             avatarProps={{
               radius: "lg",
               src: (user as any).imageUrl || undefined,
-              fallback: <FaUser className="text-default-400" />
+              fallback: <FaUser className="text-default-500" />
             }}
             description={user.email || `@${user.username}`}
             name={user.username}
@@ -420,7 +421,7 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
                 )}
               </>
             ) : (
-              <span className="text-tiny text-default-400">No plugins</span>
+              <span className="text-tiny text-default-500">No plugins</span>
             )}
           </div>
         );
@@ -456,7 +457,7 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
             <Dropdown className="bg-background border-1 border-default-200">
               <DropdownTrigger>
                 <Button isIconOnly radius="full" size="sm" variant="light">
-                  <FaEllipsisV className="text-default-400" />
+                  <FaEllipsisV className="text-default-500" />
                 </Button>
               </DropdownTrigger>
               <DropdownMenu aria-label="Action menu" disabledKeys={user.username === username ? ["delete"] : []}>
@@ -505,35 +506,11 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
   }
 
   return (
-    <div className="w-full flex flex-col gap-6 p-4 md:p-8">
-      {/* Header Section */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-3xl font-bold tracking-tight">Account Management</h1>
-          <div className="flex items-center gap-3 flex-wrap">
-            <p className="text-default-500 text-sm">View and manage system users and their permissions.</p>
-            <div className="flex items-center gap-2">
-              <Chip size="sm" variant="flat" color="default" startContent={<FaUser size={10} />}>
-                {userStats.total} total
-              </Chip>
-              <Chip size="sm" variant="flat" color="secondary" startContent={<FaShieldAlt size={10} />}>
-                {userStats.admins} admins
-              </Chip>
-              <Chip size="sm" variant="flat" color="success" startContent={<FaCheckCircle size={10} />}>
-                {userStats.active} active
-              </Chip>
-            </div>
-          </div>
-        </div>
-        <Button
-          color="primary"
-          endContent={<FaPlus />}
-          onClick={() => handleOpenModal()}
-          className="shadow-lg shadow-primary/20"
-        >
-          New Account
-        </Button>
-      </div>
+    <div className="management-page">
+      <ManagementHeader title="Accounts" summary={<>
+        <span>{userStats.total} {userStats.total === 1 ? 'account' : 'accounts'}</span>
+        {users.some(user => user.isApproved === false) && <Chip size="sm" variant="flat" color="warning">{users.filter(user => user.isApproved === false).length} pending</Chip>}
+      </>} actions={<Button color="primary" startContent={<FaPlus />} onPress={() => handleOpenModal()}>New account</Button>} />
 
       {feedback && (
         <AlertBox
@@ -544,21 +521,22 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
       )}
 
       {/* Main Table Card */}
-      <Card className="shadow-sm border-none">
+      <Card className="management-panel">
         <CardHeader className="flex flex-col sm:flex-row gap-4 items-center justify-between px-6 py-4">
           <div className="relative w-full sm:w-72">
             <Input
               isClearable
-              placeholder="Search by username..."
+              aria-label="Search accounts"
+              placeholder="Search accounts"
               size="sm"
-              startContent={<FaSearch className="text-default-300" />}
+              startContent={<FaSearch className="text-default-500" />}
               value={searchTerm}
               onValueChange={setSearchTerm}
               variant="bordered"
               className="w-full"
             />
           </div>
-          <p className="text-default-400 text-small">Showing {filteredUsers.length} users</p>
+          <p className="text-default-500 text-small">{filteredUsers.length} results</p>
         </CardHeader>
         <Divider />
         <CardBody className="p-0">
@@ -606,18 +584,14 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
           {(onClose) => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                {editingUser ? "Edit User Account" : "Create New User"}
-                <p className="text-tiny font-normal text-default-500">
-                  {editingUser
-                    ? `Update settings for ${editingUser.username}`
-                    : "Fill in the details to create a new system user."}
-                </p>
+                {editingUser ? "Edit account" : "New account"}
+
               </ModalHeader>
               <ModalBody className="py-6">
                 <div className="flex flex-col gap-6">
                   <div className="flex flex-col gap-4">
                     <h3 className="text-sm font-semibold flex items-center gap-2">
-                       <FaUser className="text-primary" /> Basic Information
+                       <FaUser className="text-primary" /> Account details
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <Input
@@ -644,7 +618,7 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
 
                   <div className="flex flex-col gap-4">
                     <h3 className="text-sm font-semibold flex items-center gap-2">
-                       <FaShieldAlt className="text-secondary" /> Access Level
+                       <FaShieldAlt className="text-secondary" /> Role
                     </h3>
                     <RadioGroup
                       label="Select User Role"
@@ -686,10 +660,10 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
 
                   <div className="flex flex-col gap-4">
                     <h3 className="text-sm font-semibold flex items-center gap-2">
-                       <FaPlug className="text-success" /> Plugin Permissions
+                       <FaPlug className="text-success" /> Plugin access
                     </h3>
                     <CheckboxGroup
-                      label="Assigned Plugins"
+                      label="Plugins"
                       orientation="horizontal"
                       value={formData.plugins}
                       onValueChange={(val) => setFormData(p => ({ ...p, plugins: val as string[] }))}
@@ -711,7 +685,7 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
                       </div>
                     </CheckboxGroup>
                     {!(allPlugins as any)?.length && (
-                      <p className="text-tiny text-default-400 italic">No plugins available in the system.</p>
+                      <p className="text-tiny text-default-500 italic">No plugins available in the system.</p>
                     )}
                   </div>
                 </div>
@@ -785,7 +759,7 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
                     {selectedImage || photoTarget?.image ? 'Change Photo' : 'Upload Photo'}
                   </Button>
                   {selectedImage && (
-                    <p className="text-tiny text-default-400 text-center">{selectedImage.name}</p>
+                    <p className="text-tiny text-default-500 text-center">{selectedImage.name}</p>
                   )}
                 </div>
               </ModalBody>

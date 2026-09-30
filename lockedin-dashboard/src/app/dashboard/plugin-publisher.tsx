@@ -1,4 +1,6 @@
-﻿'use client';
+'use client';
+
+import { ManagementHeader } from '@/components/management-header';
 
 import React, { useRef, useState } from 'react';
 import { useAction, useQuery } from 'convex/react';
@@ -11,6 +13,7 @@ import {
   CardHeader,
   Chip,
   Code,
+  Input,
   Divider,
   Modal,
   ModalBody,
@@ -83,7 +86,8 @@ const uploadLabels: Record<UploadKind, string> = {
 };
 
 export const PluginPublisherPage: React.FC<PageProps> = () => {
-  const [activeTab, setActiveTab] = useState('upload');
+  const [activeTab, setActiveTab] = useState('manage');
+  const [pluginSearch, setPluginSearch] = useState('');
   const [pluginData, setPluginData] = useState<{
     name: string;
     author: string;
@@ -105,8 +109,8 @@ export const PluginPublisherPage: React.FC<PageProps> = () => {
   const { isOpen: isDeleteModalOpen, onOpen: onDeleteModalOpen, onClose: onDeleteModalClose } = useDisclosure();
   const { isOpen: isPreviewModalOpen, onOpen: onPreviewModalOpen, onClose: onPreviewModalClose } = useDisclosure();
 
-  const uploadPluginAction = useAction((api.context as any).uploadPluginAction);
-  const deletePluginAction = useAction((api.context as any).deletePluginAction);
+  const uploadPluginAction = useAction(api.context.uploadPluginAction);
+  const deletePluginAction = useAction(api.context.deletePluginAction);
   const allPlugins = useQuery(api.context.getAllPlugins) as Plugin[] | undefined;
 
   const fileToBase64 = (file: File): Promise<string> => {
@@ -183,7 +187,7 @@ export const PluginPublisherPage: React.FC<PageProps> = () => {
     setUploadStatus({ type: 'info', message: `Scanning ${fileArray.length} files...` });
 
     for (const file of fileArray) {
-      const filePath = ((file as any).webkitRelativePath || file.name).replaceAll('\\', '/');
+      const filePath = (file.webkitRelativePath || file.name).replaceAll('\\', '/');
       const lower = file.name.toLowerCase();
 
       if (filePath.includes('/assets/') || filePath.startsWith('assets/')) {
@@ -298,81 +302,54 @@ export const PluginPublisherPage: React.FC<PageProps> = () => {
   ];
 
   const readyToPublish = Boolean(uploadedFiles.manifest && uploadedFiles.core && (uploadedFiles.icon || uploadedFiles.iconLight || uploadedFiles.iconDark) && pluginData);
-  const detectedFiles = (Object.entries(uploadedFiles) as Array<[UploadKind, UploadedFile | undefined]>).filter(([, file]) => Boolean(file));
+  const visiblePlugins = allPlugins?.filter(plugin => plugin.name.toLowerCase().includes(pluginSearch.toLowerCase())) ?? [];
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-9rem)] min-h-0 max-w-7xl flex-col gap-4 overflow-hidden px-4 py-4 md:px-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Plugin Publisher</h1>
-          <p className="text-sm text-default-500">Upload, update, and manage dashboard plugins.</p>
-        </div>
-        <Chip variant="flat" color="primary" className="font-semibold">{allPlugins?.length || 0} Plugins</Chip>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Button
-          color={activeTab === 'upload' ? 'primary' : 'default'}
-          variant={activeTab === 'upload' ? 'solid' : 'flat'}
-          startContent={<Upload size={16} />}
-          className="rounded-xl px-4 font-medium"
-          onPress={() => setActiveTab('upload')}
-        >
-          Publish
-        </Button>
-        <Button
-          color={activeTab === 'manage' ? 'primary' : 'default'}
-          variant={activeTab === 'manage' ? 'solid' : 'flat'}
-          startContent={<CodeIcon size={16} />}
-          className="rounded-xl px-4 font-medium"
-          onPress={() => setActiveTab('manage')}
-        >
-          Marketplace
-        </Button>
-      </div>
+    <div className="management-page">
+      <ManagementHeader title="Publisher" summary={<span>{allPlugins?.length ?? 0} plugins</span>} actions={activeTab === 'manage' ? <Button color="primary" startContent={<Plus size={16} />} onPress={() => { resetForm(); setActiveTab('upload'); }}>New plugin</Button> : undefined} />
+      {uploadStatus && <p role={uploadStatus.type === 'error' ? 'alert' : 'status'} className={`rounded-lg border px-4 py-3 text-sm ${uploadStatus.type === 'error' ? 'border-danger/30 bg-danger/10 text-danger' : uploadStatus.type === 'success' ? 'border-success/30 bg-success/10 text-success' : 'border-primary/30 bg-primary/10 text-primary'}`}>{uploadStatus.message}</p>}
       <Tabs
         aria-label="Plugin management"
         color="primary"
         variant="solid"
         selectedKey={activeTab}
         onSelectionChange={(key) => setActiveTab(String(key))}
-        className="min-h-0 flex-1 overflow-hidden"
+        className="w-full"
         classNames={{
-          base: 'flex h-full min-h-0 flex-col overflow-hidden',
-          tabList: 'hidden',
+          base: 'w-full',
+          tabList: 'gap-1 rounded-lg bg-default-100 p-1 mb-4',
           cursor: 'rounded-xl bg-primary shadow-none',
           tab: 'h-10 px-4 data-[hover-unselected=true]:opacity-100',
           tabContent: 'text-default-600 group-data-[selected=true]:text-primary-foreground',
-          panel: 'h-full overflow-hidden p-0',
+          panel: 'p-0',
         }}
       >
-        <Tab key="upload" title={<div className="flex items-center gap-2 px-2"><Upload size={18} /><span>Publish</span></div>}>
-          <div className="grid h-full min-h-0 grid-cols-[minmax(0,1.4fr)_360px] gap-4 overflow-hidden">
-            <Card className="flex h-full min-h-0 flex-col border border-default-200 bg-content1 shadow-sm">
-              <CardHeader className="flex items-center justify-between gap-3 pb-3">
+        <Tab key="upload" title={<div className="flex items-center gap-2 px-2"><Upload size={18} /><span>Upload</span></div>}>
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-5 items-start">
+            <Card className="management-panel">
+              <CardHeader className="flex items-center justify-between gap-3 px-5 py-4">
                 <div>
-                  <div className="text-lg font-semibold">{editingPlugin ? `Update: ${editingPlugin.name}` : 'Upload Bundle'}</div>
-                  <div className="text-sm text-default-500">Upload a whole folder or select files from one. We will sort them automatically.</div>
+                  <div className="text-lg font-semibold">{editingPlugin ? `Update: ${editingPlugin.name}` : 'Plugin files'}</div>
                 </div>
                 {editingPlugin && (
                   <Button variant="flat" size="sm" startContent={<X size={14} />} onClick={resetForm}>
-                    Clear edit mode
+                    Cancel update
                   </Button>
                 )}
               </CardHeader>
               <Divider />
-              <CardBody className="min-h-0 space-y-4 overflow-auto py-4">
-                <div className="grid grid-cols-2 gap-3">
+              <CardBody className="space-y-4 p-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <Button color="primary" size="lg" startContent={<FolderOpen size={18} />} onPress={() => folderInputRef.current?.click()}>
-                    Upload Folder
+                    Choose folder
                   </Button>
                   <Button variant="flat" size="lg" startContent={<Upload size={18} />} onPress={() => fileInputRef.current?.click()}>
-                    Select Files
+                    Choose files
                   </Button>
                 </div>
 
                 <div
-                  className={`flex min-h-[220px] items-center justify-center rounded-2xl border-2 border-dashed px-6 py-8 text-center transition-colors ${
+                  className={`flex min-h-[170px] items-center justify-center rounded-2xl border-2 border-dashed px-6 py-8 text-center transition-colors ${
                     ingestActive ? 'border-primary bg-primary/5' : 'border-default-200 bg-default-50 hover:border-default-300'
                   }`}
                   onDragEnter={(event) => { event.preventDefault(); setIngestActive(true); }}
@@ -390,13 +367,7 @@ export const PluginPublisherPage: React.FC<PageProps> = () => {
                     </div>
                     <div>
                       <div className="text-base font-semibold">Drop plugin files here</div>
-                      <div className="mt-1 text-sm text-default-500">Supported detection: `manifest.json`, `core.js`, `icon-light.svg`, `icon-dark.svg`, default icon, and `assets/`.</div>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-default-500">
-                      <Chip size="sm" variant="flat">JSON</Chip>
-                      <Chip size="sm" variant="flat">JS</Chip>
-                      <Chip size="sm" variant="flat">SVG</Chip>
-                      <Chip size="sm" variant="flat">assets/</Chip>
+                      <div className="mt-1 text-sm text-default-500">manifest.json, core.js and SVG icons</div>
                     </div>
                   </div>
                 </div>
@@ -412,7 +383,7 @@ export const PluginPublisherPage: React.FC<PageProps> = () => {
                   </div>
                   <div className="max-h-[180px] space-y-2 overflow-auto pr-1">
                     {pluginAssets.length === 0 ? (
-                      <div className="rounded-lg border border-default-200 bg-content1 px-3 py-4 text-sm text-default-400">No assets detected yet.</div>
+                      <div className="rounded-lg border border-default-200 bg-content1 px-3 py-4 text-sm text-default-500">No assets detected yet.</div>
                     ) : (
                       pluginAssets.map((asset, index) => (
                         <div key={`${asset.name}-${index}`} className="flex items-center justify-between gap-3 rounded-lg border border-default-200 bg-content1 px-3 py-2">
@@ -434,38 +405,14 @@ export const PluginPublisherPage: React.FC<PageProps> = () => {
               </CardFooter>
             </Card>
 
-            <Card className="flex h-full min-h-0 flex-col border border-default-200 bg-content1 shadow-sm">
-              <CardHeader className="pb-3">
+            <Card className="management-panel">
+              <CardHeader className="px-5 py-4">
                 <div>
-                  <div className="text-lg font-semibold">Detected Data</div>
-                  <div className="text-sm text-default-500">Live summary of what will be uploaded.</div>
+                  <div className="text-lg font-semibold">Package preview</div>
                 </div>
               </CardHeader>
               <Divider />
-              <CardBody className="min-h-0 space-y-4 overflow-auto py-4">
-                {uploadStatus && (
-                  <div className={`rounded-xl border px-4 py-3 text-sm ${
-                    uploadStatus.type === 'success'
-                      ? 'border-success/20 bg-success/10 text-success'
-                      : uploadStatus.type === 'error'
-                        ? 'border-danger/20 bg-danger/10 text-danger'
-                        : 'border-primary/20 bg-primary/10 text-primary'
-                  }`}>
-                    {uploadStatus.message}
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-default-200 bg-default-50 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-default-500">Detected files</div>
-                    <div className="mt-2 text-2xl font-semibold">{detectedFiles.length}</div>
-                  </div>
-                  <div className="rounded-xl border border-default-200 bg-default-50 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-default-500">Assets</div>
-                    <div className="mt-2 text-2xl font-semibold">{pluginAssets.length}</div>
-                  </div>
-                </div>
-
+              <CardBody className="space-y-4 p-5">
                 <div className="rounded-xl border border-default-200 bg-content2/40 p-4">
                   <div className="mb-3 text-sm font-semibold">Plugin data</div>
                   {pluginData ? (
@@ -484,11 +431,11 @@ export const PluginPublisherPage: React.FC<PageProps> = () => {
                       </div>
                       <div>
                         <div className="text-xs uppercase tracking-wide text-default-500">Description</div>
-                        <div className="text-default-600">{pluginData.description || 'No description in manifest.'}</div>
+                        <div className="text-default-600">{pluginData.description || 'None'}</div>
                       </div>
                     </div>
                   ) : (
-                    <div className="text-sm text-default-400">Manifest data will appear here after detection.</div>
+                    <div className="text-sm text-default-500">Choose a manifest to preview the plugin.</div>
                   )}
                 </div>
 
@@ -496,49 +443,37 @@ export const PluginPublisherPage: React.FC<PageProps> = () => {
                   {requiredChecklist.map((item) => (
                     <div key={item.key} className="flex items-center justify-between rounded-xl border border-default-200 bg-default-50 px-3 py-3">
                       <div className="flex items-center gap-2 text-sm font-medium">
-                        <span className={`${item.ready ? 'text-success' : 'text-default-400'}`}>{item.icon}</span>
+                        <span className={`${item.ready ? 'text-success' : 'text-default-500'}`}>{item.icon}</span>
                         {item.label}
                       </div>
                       <Chip size="sm" color={item.ready ? 'success' : 'default'} variant="flat">
-                        {item.ready ? 'ready' : 'waiting'}
+                        {item.ready ? 'ready' : item.key === 'assets' ? 'optional' : 'missing'}
                       </Chip>
                     </div>
                   ))}
                 </div>
-
-
-
-
-                {editingPlugin && (
-                  <div className="rounded-xl border border-warning/20 bg-warning/10 p-4 text-sm text-warning-700 dark:text-warning">
-                    Updating existing plugin: <strong>{editingPlugin.name}</strong>
-                  </div>
-                )}
               </CardBody>
             </Card>
           </div>
 
-          <input ref={folderInputRef} type="file" multiple className="hidden" {...({ webkitdirectory: '', directory: '' } as any)} onChange={(event) => event.target.files && processSelectedFiles(event.target.files)} />
+          <input ref={folderInputRef} type="file" multiple className="hidden" {...{ webkitdirectory: '', directory: '' }} onChange={(event) => event.target.files && processSelectedFiles(event.target.files)} />
           <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(event) => event.target.files && processSelectedFiles(event.target.files)} />
         </Tab>
 
-        <Tab key="manage" title={<div className="flex items-center gap-2 px-2"><CodeIcon size={18} /><span>Marketplace</span></div>}>
-          <div className="h-full min-h-0 overflow-hidden">
-            <Card className="flex h-full min-h-0 flex-col border border-default-200 bg-content1 shadow-sm">
-              <CardHeader className="pb-3">
-                <div>
-                  <div className="text-lg font-semibold">Published Plugins</div>
-                  <div className="text-sm text-default-500">Quick view, edit, and delete published plugins.</div>
-                </div>
+        <Tab key="manage" title={<div className="flex items-center gap-2 px-2"><CodeIcon size={18} /><span>Published</span></div>}>
+          <div className="w-full">
+            <Card className="management-panel">
+              <CardHeader className="px-5 py-4">
+                <Input aria-label="Search plugins" placeholder="Search plugins" variant="bordered" size="sm" isClearable value={pluginSearch} onValueChange={setPluginSearch} className="sm:max-w-72" />
               </CardHeader>
               <Divider />
-              <CardBody className="min-h-0 overflow-auto p-0">
-                {allPlugins && allPlugins.length > 0 ? (
+              <CardBody className="p-0">
+                {!allPlugins ? <p role="status" className="p-8 text-sm text-default-500">Loading plugins...</p> : visiblePlugins.length > 0 ? (
                   <div className="grid grid-cols-1 divide-y divide-default-200">
-                    {allPlugins.map((plugin) => (
-                      <div key={plugin._id} className="group flex items-center gap-4 p-4 transition-colors hover:bg-default-50">
+                    {visiblePlugins.map((plugin) => (
+                      <div key={plugin._id} className="group flex flex-wrap sm:flex-nowrap items-center gap-4 px-5 py-4 transition-colors hover:bg-default-50">
                         <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-default-200 bg-default-50 p-2 shadow-sm">
-                          <PluginIcon pluginName={plugin.name} imageClassName="h-full w-full object-contain" fallback={<Image size={20} className="text-default-400" />} />
+                          <PluginIcon pluginName={plugin.name} imageClassName="h-full w-full object-contain" fallback={<Image size={20} className="text-default-500" />} />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
@@ -546,21 +481,21 @@ export const PluginPublisherPage: React.FC<PageProps> = () => {
                             <Chip size="sm" variant="flat" className="h-5 text-[10px] font-bold">v{plugin.version}</Chip>
                             {plugin.isActive && <Chip size="sm" color="success" variant="flat" className="h-5 text-[10px] font-bold">LIVE</Chip>}
                           </div>
-                          <p className="mt-1 truncate text-xs text-default-500">{plugin.description || 'No description'} | <span className="font-medium text-primary">@{plugin.author}</span></p>
+                          <p className="mt-1 truncate text-xs text-default-500">{plugin.author}{plugin.description ? ` · ${plugin.description}` : ''}</p>
                         </div>
                         <div className="flex items-center gap-1">
                           <Tooltip content="Quick View">
-                            <Button size="sm" variant="light" isIconOnly className="h-8 w-8 text-default-600" onPress={() => { setPluginToPreview(plugin); onPreviewModalOpen(); }}>
+                            <Button size="sm" variant="light" isIconOnly aria-label={`View ${plugin.name}`} className="h-8 w-8 text-default-600" onPress={() => { setPluginToPreview(plugin); onPreviewModalOpen(); }}>
                               <Eye size={16} />
                             </Button>
                           </Tooltip>
                           <Tooltip content="Edit in uploader">
-                            <Button size="sm" variant="light" isIconOnly className="h-8 w-8 text-default-600" onPress={() => handleEditPlugin(plugin)}>
+                            <Button size="sm" variant="light" isIconOnly aria-label={`Edit ${plugin.name}`} className="h-8 w-8 text-default-600" onPress={() => handleEditPlugin(plugin)}>
                               <Edit size={16} />
                             </Button>
                           </Tooltip>
                           <Tooltip content="Delete plugin" color="danger">
-                            <Button size="sm" variant="light" color="danger" isIconOnly className="h-8 w-8" onPress={() => { setPluginToDelete(plugin); onDeleteModalOpen(); }}>
+                            <Button size="sm" variant="light" color="danger" isIconOnly aria-label={`Delete ${plugin.name}`} className="h-8 w-8" onPress={() => { setPluginToDelete(plugin); onDeleteModalOpen(); }}>
                               <Trash2 size={16} />
                             </Button>
                           </Tooltip>
@@ -569,12 +504,12 @@ export const PluginPublisherPage: React.FC<PageProps> = () => {
                     ))}
                   </div>
                 ) : (
-                  <div className="py-20 text-center">
-                    <div className="mb-6 inline-flex h-20 w-20 items-center justify-center rounded-full bg-default-100 text-default-300">
+                  <div className="py-12 text-center">
+                    <div className="mb-6 inline-flex h-20 w-20 items-center justify-center rounded-full bg-default-100 text-default-500">
                       <CodeIcon size={40} />
                     </div>
-                    <h3 className="font-semibold text-default-500">Empty Marketplace</h3>
-                    <p className="mt-1 text-xs text-default-400">Start by publishing your first plugin to the global directory.</p>
+                    <h3 className="font-semibold text-default-500">{pluginSearch ? 'No matching plugins' : 'No published plugins'}</h3>
+                    <p className="mt-1 text-xs text-default-500"></p>
                   </div>
                 )}
               </CardBody>
@@ -612,7 +547,7 @@ export const PluginPublisherPage: React.FC<PageProps> = () => {
               <>
                 <div className="flex items-center gap-6">
                   <div className="flex h-20 w-20 items-center justify-center rounded-3xl border border-default-200 bg-default-50 p-4 shadow-sm">
-                    <PluginIcon pluginName={pluginToPreview.name} imageClassName="h-full w-full object-contain" fallback={<Image size={32} className="text-default-400" />} />
+                    <PluginIcon pluginName={pluginToPreview.name} imageClassName="h-full w-full object-contain" fallback={<Image size={32} className="text-default-500" />} />
                   </div>
                   <div className="flex-1 space-y-1">
                     <h3 className="text-2xl font-black">{pluginToPreview.name}</h3>
@@ -625,24 +560,24 @@ export const PluginPublisherPage: React.FC<PageProps> = () => {
 
                 <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-1">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-default-400">Publisher</div>
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-default-500">Publisher</div>
                     <div className="text-sm font-semibold">@{pluginToPreview.author}</div>
                   </div>
                   <div className="space-y-1">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-default-400">Last Update</div>
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-default-500">Last Update</div>
                     <div className="text-sm font-semibold">{new Date(pluginToPreview.uploadDate).toLocaleDateString(undefined, { dateStyle: 'long' })}</div>
                   </div>
                 </div>
 
                 <div className="space-y-1">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-default-400">Description</div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-default-500">Description</div>
                   <div className="rounded-xl border border-default-200 bg-default-50 p-4 text-sm italic leading-relaxed text-default-600">
                     {pluginToPreview.description || 'No description provided.'}
                   </div>
                 </div>
 
                 <div className="space-y-1">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-default-400">Infrastructure ID</div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-default-500">Infrastructure ID</div>
                   <Code size="sm" className="w-full border border-default-200 bg-default-100 py-1 text-[10px] font-mono text-default-500">{pluginToPreview._id}</Code>
                 </div>
               </>

@@ -1,8 +1,8 @@
 ﻿'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import Image from 'next/image';
-import { useAction, useMutation, useQuery } from 'convex/react';
+import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import {
   Button,
@@ -15,10 +15,6 @@ import {
   Avatar,
   useDisclosure,
   Divider,
-  Dropdown,
-  DropdownTrigger,
-  DropdownMenu,
-  DropdownItem,
 } from '@heroui/react';
 import styles from '../app/dashboard/dashboard.module.css';
 import { appModalClassNames } from '@/components/app-dialogs';
@@ -47,7 +43,7 @@ interface SidebarProps {
 }
 
 export const DashboardSidebar: React.FC<SidebarProps> = ({
-  logoSrc = '/media/logo-v2.svg',
+  logoSrc = '/media/lockedin.svg',
   navItems,
   activePage,
   onNavigation,
@@ -61,11 +57,9 @@ export const DashboardSidebar: React.FC<SidebarProps> = ({
   onLogout,
   renderIcon = (icon) => <span className={styles.navIcon}>{icon}</span>,
 }) => {
-  const [displayTheme, setDisplayTheme] = useState(theme);
   const { isOpen, onOpen, onClose } = useDisclosure();
 
   const isServersNavActive = ['admin-servers', 'admin-server-marketplace', 'admin-server-plugins'].includes(activePage);
-  const [serversMenuOpen, setServersMenuOpen] = useState(false);
 
   // Edit profile state
   const [newUsername, setNewUsername] = useState('');
@@ -80,9 +74,6 @@ export const DashboardSidebar: React.FC<SidebarProps> = ({
   const updateImage = useMutation(api.users.updateCurrentImage);
   // Fetch current user's raw usrData so photo upload doesn't wipe it
 
-  useEffect(() => {
-    setDisplayTheme(theme);
-  }, [theme]);
 
   const openEdit = () => {
     setNewUsername(username || '');
@@ -124,8 +115,8 @@ export const DashboardSidebar: React.FC<SidebarProps> = ({
       }
 
       onClose();
-    } catch (err: any) {
-      setSaveError(err?.message || 'Failed to save. Try again.');
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save. Try again.');
     } finally {
       setIsSaving(false);
     }
@@ -141,8 +132,8 @@ export const DashboardSidebar: React.FC<SidebarProps> = ({
           <Image
             src={logoSrc}
             alt="LockedIN"
-            width={340}
-            height={220}
+            width={221}
+            height={25}
             className={styles.logoImage}
             priority
           />
@@ -194,7 +185,7 @@ export const DashboardSidebar: React.FC<SidebarProps> = ({
             <img src="/icons/acc-manange-outline.svg" alt="Manage" className={styles.iconOutline} style={{ width: '22px', height: '22px' }} />
             <img src="/icons/acc-manange-full.svg" alt="Manage" className={styles.iconFull} style={{ width: '22px', height: '22px' }} />
           </span>
-          <span className={styles.managementLabel}>Manage</span>
+          <span className={styles.managementLabel}>Accounts</span>
         </Button>
       </div>
     </div>
@@ -241,30 +232,13 @@ export const DashboardSidebar: React.FC<SidebarProps> = ({
 
     <div className="w-full">
       <div className="w-full">
-        <Dropdown isOpen={serversMenuOpen} onOpenChange={setServersMenuOpen} placement="right-start" className="bg-background border-1 border-default-200">
-          <DropdownTrigger>
-            <Button
-              className={`${styles.managementButton} ${
-                isServersNavActive ? styles.active : ''
-              }`}
-              onClick={() => onNavigation('admin-servers')}
-              fullWidth
-              variant={isServersNavActive ? 'solid' : 'flat'}
-              color={isServersNavActive ? 'primary' : 'default'}
-            >
-              <span className={styles.managementIcon}>
-                <img src="/icons/server-outline.svg" alt="Servers" className={styles.iconOutline} style={{ width: '22px', height: '22px' }} />
-                <img src="/icons/server-full.svg" alt="Servers" className={styles.iconFull} style={{ width: '22px', height: '22px' }} />
-              </span>
-              <span className={styles.managementLabel}>Servers</span>
-            </Button>
-          </DropdownTrigger>
-          <DropdownMenu aria-label="Servers menu" onAction={(key) => onNavigation(String(key))}>
-            <DropdownItem key="admin-servers">Servers</DropdownItem>
-            <DropdownItem key="admin-server-marketplace">Marketplace</DropdownItem>
-            <DropdownItem key="admin-server-plugins">Plugins</DropdownItem>
-          </DropdownMenu>
-        </Dropdown>
+        <Button className={`${styles.managementButton} ${isServersNavActive ? styles.active : ''}`} onPress={() => onNavigation('admin-servers')} fullWidth variant="flat">
+          <span className={styles.managementIcon}>
+            <img src="/icons/server-outline.svg" alt="" className={styles.iconOutline} width={22} height={22} />
+            <img src="/icons/server-full.svg" alt="" className={styles.iconFull} width={22} height={22} />
+          </span>
+          <span className={styles.managementLabel}>Servers</span>
+        </Button>
       </div>
     </div>
   </div>
@@ -276,20 +250,21 @@ export const DashboardSidebar: React.FC<SidebarProps> = ({
         <div className="w-full">
           <Button
             className={styles.adminButton}
-            onClick={onThemeToggle}
+            onPress={onThemeToggle}
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
             fullWidth
             variant="light"
             color="default"
           >
             <span className={styles.logoutIcon}>
               <img
-                src={displayTheme === 'dark' ? '/icons/light-dark-full.svg' : '/icons/light-dark-line.svg'}
-                alt={displayTheme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+                src={theme === 'dark' ? '/icons/light-dark-full.svg' : '/icons/light-dark-line.svg'}
+                alt={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
                 style={{ width: '20px', height: '20px' }}
               />
             </span>
             <span className={styles.adminLabel}>
-              {displayTheme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+              {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
             </span>
           </Button>
         </div>
@@ -364,7 +339,7 @@ export const DashboardSidebar: React.FC<SidebarProps> = ({
                     />
                     <button
                       onClick={() => fileRef.current?.click()}
-                      className="absolute -bottom-1 -right-1 bg-primary text-white rounded-full w-6 h-6 flex items-center justify-center text-xs shadow-md hover:bg-primary/80 transition-colors"
+                      className="absolute -bottom-1 -right-1 bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-xs shadow-md hover:bg-primary/80 transition-colors"
                       title="Change photo"
                     >
                       âœŽ
