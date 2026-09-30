@@ -1,31 +1,44 @@
-import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation } from 'convex/react';
+import { ManagementHeader } from '@/components/management-header';
+﻿import React, { useState } from 'react';
+import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { Id } from '../../../convex/_generated/dataModel';
 import {
+  Button,
   Card,
   CardBody,
-  CardHeader,
-  Button,
-  Input,
   Chip,
-  Divider,
-  Textarea,
   Checkbox,
-  Table,
-  TableHeader,
-  TableColumn,
-  TableBody,
-  TableRow,
-  TableCell,
+  Divider,
+  Input,
   Modal,
-  ModalContent,
-  ModalHeader,
   ModalBody,
+  ModalContent,
   ModalFooter,
+  ModalHeader,
+  Table,
+  TableBody,
+  TableCell,
+  TableColumn,
+  TableHeader,
+  TableRow,
+  Textarea,
   useDisclosure,
 } from '@heroui/react';
-import { FaKey, FaTrash, FaPlus, FaCopy, FaCheck, FaLock, FaEdit, FaTimes, FaEye, FaEyeSlash } from 'react-icons/fa';
+import { AppAlertDialog, AppConfirmDialog, appModalClassNames } from '@/components/app-dialogs';
+import {
+  FaCheck,
+  FaCopy,
+  FaEdit,
+  FaEye,
+  FaExclamationTriangle,
+  FaKey,
+  FaLock,
+  FaPlus,
+  FaShieldAlt,
+  FaTimes,
+  FaTrash,
+} from 'react-icons/fa';
 
 interface PageProps {
   username?: string;
@@ -45,65 +58,58 @@ interface ApiKey {
   isActive: boolean;
   lastUsed?: number;
   createdAt: number;
+  kind?: 'MANUAL' | 'SERVER_MODULE';
+  serverId?: string;
+  serverModuleId?: string;
 }
 
-const AVAILABLE_SCOPES = [
-  { id: 'plugin:read', label: 'Read Plugin Data', icon: '📖' },
-  { id: 'plugin:write', label: 'Write Plugin Data', icon: '✍️' },
-  { id: 'data:read', label: 'Read All Data', icon: '📖' },
-  { id: 'data:write', label: 'Write All Data', icon: '✍️' },
-  { id: 'api:call', label: 'Call Plugin APIs', icon: '🔗' },
-  { id: 'files:read', label: 'Read Files', icon: '📁' },
-  { id: 'files:upload', label: 'Upload Files', icon: '📤' },
-];
+function timeAgo(ts: number): string {
+  const diff = Date.now() - ts;
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
 
-export const ApiKeysPage: React.FC<PageProps> = ({ username }) => {
-  const [keys, setKeys] = useState<ApiKey[]>([]);
+export const ApiKeysPage: React.FC<PageProps> = () => {
   const [selectedKey, setSelectedKey] = useState<ApiKey | null>(null);
   const [viewKey, setViewKey] = useState<ApiKey | null>(null);
   const [newKey, setNewKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [showKeyValue, setShowKeyValue] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
+  const [confirmConfig, setConfirmConfig] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [pluginTabSelection, setSelectedPluginTab] = useState<string>('');
+  const [step, setStep] = useState(1);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'revoked'>('all');
+
   const { isOpen, onOpen, onClose } = useDisclosure();
   const { isOpen: isViewOpen, onOpen: onViewOpen, onClose: onViewClose } = useDisclosure();
   const { isOpen: isAlertOpen, onOpen: onAlertOpen, onClose: onAlertClose } = useDisclosure();
   const { isOpen: isConfirmOpen, onOpen: onConfirmOpen, onClose: onConfirmClose } = useDisclosure();
-  const [alertMessage, setAlertMessage] = useState('');
-  const [confirmConfig, setConfirmConfig] = useState<{message: string; onConfirm: () => void} | null>(null);
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [selectedPluginTab, setSelectedPluginTab] = useState<string>('');
-  const [step, setStep] = useState(1);
 
-  // Form state
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    scopes: [] as string[],
     allowedEndpoints: [] as string[],
     blockedEndpoints: [] as string[],
     rateLimit: 0,
   });
 
-  // Queries and mutations
   const keysData = useQuery(api.apiKeys.listKeys);
   const pluginsData = useQuery(api.context.getAllPlugins);
   const generateKey = useMutation(api.apiKeys.generateKey);
   const updateKey = useMutation(api.apiKeys.updateKey);
   const revokeKey = useMutation(api.apiKeys.revokeKey);
+  const deleteKey = useMutation(api.apiKeys.deleteKey);
 
-  useEffect(() => {
-    if (keysData) {
-      setKeys(keysData);
-    }
-  }, [keysData]);
+  const keys = keysData ?? [];
+  const apiPlugins = pluginsData?.filter(plugin => (plugin.apiEndpoints?.length ?? 0) > 0) ?? [];
+  const selectedPluginTab = apiPlugins.some(plugin => plugin.name === pluginTabSelection) ? pluginTabSelection : apiPlugins[0]?.name || '';
 
-  useEffect(() => {
-    if (isOpen && pluginsData && pluginsData.length > 0 && !selectedPluginTab) {
-      setSelectedPluginTab(pluginsData[0].name);
-    }
-  }, [isOpen, pluginsData, selectedPluginTab]);
-
-  // Helper functions for modals
   const showAlert = (message: string) => {
     setAlertMessage(message);
     onAlertOpen();
@@ -115,14 +121,7 @@ export const ApiKeysPage: React.FC<PageProps> = ({ username }) => {
   };
 
   const resetForm = () => {
-    setFormData({
-      name: '',
-      description: '',
-      scopes: [],
-      allowedEndpoints: [],
-      blockedEndpoints: [],
-      rateLimit: 0,
-    });
+    setFormData({ name: '', description: '', allowedEndpoints: [], blockedEndpoints: [], rateLimit: 0 });
     setSelectedKey(null);
     setIsEditMode(false);
     setSelectedPluginTab('');
@@ -134,32 +133,25 @@ export const ApiKeysPage: React.FC<PageProps> = ({ username }) => {
       showAlert('Please enter a key name');
       return;
     }
-
-    // Validate: Must have at least one endpoint enabled
     if (formData.allowedEndpoints.length === 0) {
       showAlert('Please enable at least one endpoint');
       return;
     }
 
-    // Auto-grant all scopes since we're controlling at endpoint level
-    const allScopes = AVAILABLE_SCOPES.map(s => s.id);
-
     try {
       const key = await generateKey({
         name: formData.name,
         description: formData.description,
-        scopes: allScopes,
-        allowedPlugins: [...new Set(formData.allowedEndpoints.map(e => e.split('/')[0]))],
+        scopes: ['plugin:read', 'plugin:write', 'data:read', 'data:write', 'api:call', 'files:read', 'files:upload'],
+        allowedPlugins: [...new Set(formData.allowedEndpoints.map((entry) => entry.split('/')[0]))],
         allowedEndpoints: formData.allowedEndpoints,
         blockedEndpoints: formData.blockedEndpoints.length > 0 ? formData.blockedEndpoints : undefined,
         rateLimit: formData.rateLimit || undefined,
       });
-
       setNewKey(key);
       resetForm();
       onClose();
-    } catch (err) {
-      console.error('Failed to create key:', err);
+    } catch {
       showAlert('Failed to create key');
     }
   };
@@ -167,26 +159,21 @@ export const ApiKeysPage: React.FC<PageProps> = ({ username }) => {
   const handleUpdateKey = async () => {
     if (!selectedKey) return;
 
-    // Auto-grant all scopes since we're controlling at endpoint level
-    const allScopes = AVAILABLE_SCOPES.map(s => s.id);
-
     try {
       await updateKey({
         id: selectedKey._id,
         name: formData.name,
         description: formData.description,
-        scopes: allScopes,
-        allowedPlugins: formData.allowedEndpoints.length > 0 ? [...new Set(formData.allowedEndpoints.map(e => e.split('/')[0]))] : undefined,
+        scopes: ['plugin:read', 'plugin:write', 'data:read', 'data:write', 'api:call', 'files:read', 'files:upload'],
+        allowedPlugins: formData.allowedEndpoints.length > 0 ? [...new Set(formData.allowedEndpoints.map((entry) => entry.split('/')[0]))] : undefined,
         allowedEndpoints: formData.allowedEndpoints.length > 0 ? formData.allowedEndpoints : undefined,
         blockedEndpoints: formData.blockedEndpoints.length > 0 ? formData.blockedEndpoints : undefined,
         rateLimit: formData.rateLimit || undefined,
       });
-
       showAlert('Key updated successfully');
       resetForm();
       onClose();
-    } catch (err) {
-      console.error('Failed to update key:', err);
+    } catch {
       showAlert('Failed to update key');
     }
   };
@@ -196,7 +183,6 @@ export const ApiKeysPage: React.FC<PageProps> = ({ username }) => {
     setFormData({
       name: key.name,
       description: key.description || '',
-      scopes: key.scopes,
       allowedEndpoints: key.allowedEndpoints || [],
       blockedEndpoints: key.blockedEndpoints || [],
       rateLimit: key.rateLimit || 0,
@@ -205,269 +191,165 @@ export const ApiKeysPage: React.FC<PageProps> = ({ username }) => {
     onOpen();
   };
 
-  const handleRevoke = async (id: Id<'apiKeys'>) => {
-    showConfirm('Are you sure? This key will stop working immediately.', async () => {
+  const handleRevoke = (id: Id<'apiKeys'>) => {
+    showConfirm('This key will stop working immediately and cannot be restored.', async () => {
       try {
         await revokeKey({ id });
-        showAlert('Key revoked successfully');
-      } catch (err) {
-        console.error('Failed to revoke key:', err);
+        showAlert('Key revoked.');
+      } catch {
       }
     });
   };
 
-  const handleViewKey = (key: ApiKey) => {
-    setViewKey(key);
-    setShowKeyValue(false);
-    onViewOpen();
+  const handleDeleteRevoked = (id: Id<'apiKeys'>) => {
+    showConfirm('Permanently delete this revoked key?', async () => {
+      try {
+        await deleteKey({ id });
+        showAlert('Revoked key deleted.');
+      } catch (error) {
+        showAlert(error instanceof Error ? error.message : 'Failed to delete key');
+      }
+    });
+  };
+
+  const handleDeleteAllRevoked = () => {
+    const revoked = keys.filter((key) => !key.isActive);
+    if (revoked.length === 0) return;
+
+    showConfirm(`Delete ${revoked.length} revoked key(s) permanently?`, async () => {
+      try {
+        await Promise.all(revoked.map((key) => deleteKey({ id: key._id })));
+        showAlert('All revoked keys deleted.');
+      } catch (error) {
+        showAlert(error instanceof Error ? error.message : 'Failed to delete revoked keys');
+      }
+    });
   };
 
   const copyToClipboard = () => {
-    if (newKey) {
-      navigator.clipboard.writeText(newKey);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+    if (!newKey) return;
+    navigator.clipboard.writeText(newKey);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
+  const filteredKeys = keys.filter(key => key.name.toLowerCase().includes(searchTerm.toLowerCase()) && (statusFilter === 'all' || key.isActive === (statusFilter === 'active')));
+  const activeKeys = keys.filter((key) => key.isActive).length;
+  const revokedKeys = keys.filter((key) => !key.isActive).length;
+
   return (
-    <div className="w-full p-6 space-y-6">
-      {/* Header with Stats */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <FaKey className="text-3xl text-primary" />
-              <h1 className="text-3xl font-bold text-foreground">API Keys Management</h1>
-            </div>
-            <p className="text-default-600">Create and manage API keys for external apps, IoT devices, and integrations</p>
-          </div>
-          <Button
-            color="primary"
-            size="lg"
-            startContent={<FaPlus />}
-            onClick={() => {
-              resetForm();
-              setIsEditMode(false);
-              onOpen();
-            }}
-            className="font-bold"
-          >
-            Create New Key
-          </Button>
-        </div>
+    <div className="management-page">
+      <ManagementHeader title="API keys" summary={<>
+        <span>{activeKeys} active</span>
+        {revokedKeys > 0 && <span>&middot; {revokedKeys} revoked</span>}
+      </>} actions={<>
+        {revokedKeys > 0 && <Button variant="bordered" onPress={handleDeleteAllRevoked}>Clear revoked</Button>}
+        <Button color="primary" startContent={<FaPlus />} onPress={() => { resetForm(); setIsEditMode(false); onOpen(); }}>Create key</Button>
+      </>} />
 
-        {/* Key Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/30">
-            <CardBody className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-blue-600 dark:text-blue-400 text-sm font-bold">TOTAL KEYS</span>
-                <FaKey className="text-blue-500 text-xl" />
-              </div>
-              <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">{keys.length}</div>
-            </CardBody>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/30">
-            <CardBody className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-green-600 dark:text-green-400 text-sm font-bold">ACTIVE KEYS</span>
-                <FaCheck className="text-green-500 text-xl" />
-              </div>
-              <div className="text-3xl font-bold text-green-600 dark:text-green-400">{keys.filter(k => k.isActive).length}</div>
-            </CardBody>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-red-500/20 to-red-600/10 border border-red-500/30">
-            <CardBody className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-red-600 dark:text-red-400 text-sm font-bold">REVOKED</span>
-                <FaTimes className="text-red-500 text-xl" />
-              </div>
-              <div className="text-3xl font-bold text-red-600 dark:text-red-400">{keys.filter(k => !k.isActive).length}</div>
-            </CardBody>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-yellow-500/20 to-yellow-600/10 border border-yellow-500/30">
-            <CardBody className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-yellow-600 dark:text-yellow-400 text-sm font-bold">USAGE TODAY</span>
-                <FaLock className="text-yellow-500 text-xl" />
-              </div>
-              <div className="text-3xl font-bold text-yellow-600 dark:text-yellow-400">
-                {keys.filter(k => k.lastUsed && new Date(k.lastUsed).toDateString() === new Date().toDateString()).length}
-              </div>
-            </CardBody>
-          </Card>
-        </div>
-      </div>
-
-      {/* New Key Display */}
       {newKey && (
-        <Card className="bg-success-50 border border-success-200">
-          <CardBody className="space-y-4">
-            <div className="flex items-center gap-2 text-success">
-              <FaCheck /> <span className="font-bold">New Key Generated!</span>
+        <Card className="border border-success/30 bg-success/5">
+          <CardBody className="gap-4">
+            <div className="flex items-center gap-2 text-success font-semibold">
+              <FaCheck /> Key created - save it before closing
             </div>
-            <p className="text-sm text-default-700">
-              Save this key now. You won't be able to see it again after you close this.
-            </p>
-            <div className="flex gap-2 bg-default-100 p-3 rounded-lg font-mono text-sm text-foreground break-all border border-default-200">
-              <span className="flex-1">{newKey}</span>
-              <Button
-                isIconOnly
-                size="sm"
-                variant="light"
-                onClick={copyToClipboard}
-              >
+            <div className="flex gap-2 items-center bg-default-100 border border-default-200 rounded-xl p-3 font-mono text-sm break-all">
+              <span className="flex-1 select-all">{newKey}</span>
+              <Button isIconOnly size="sm" variant="light" onClick={copyToClipboard}>
                 {copied ? <FaCheck className="text-success" /> : <FaCopy />}
               </Button>
             </div>
-            <Button
-              color="success"
-              onClick={() => setNewKey(null)}
-              fullWidth
-            >
-              Done (I have saved it)
+            <Button color="success" variant="flat" onClick={() => setNewKey(null)} fullWidth>
+              Done
             </Button>
           </CardBody>
         </Card>
       )}
 
-      {/* Active Keys Table */}
-      <Card className="border border-default-200">
-        <CardHeader className="flex justify-between items-center border-b border-default-200 pb-4">
-          <div>
-            <h2 className="text-xl font-bold text-foreground">Your API Keys</h2>
-            <p className="text-xs text-default-500 mt-1">Manage your API keys and their permissions</p>
+      <Card className="management-panel">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-divider p-4">
+          <Input aria-label="Search API keys" placeholder="Search keys" size="sm" variant="bordered" isClearable value={searchTerm} onValueChange={setSearchTerm} className="w-full sm:max-w-64" />
+          <div className="flex gap-1" role="group" aria-label="Key status">
+            {(['all', 'active', 'revoked'] as const).map(status => <Button key={status} size="sm" variant={statusFilter === status ? 'flat' : 'light'} color={statusFilter === status ? 'primary' : 'default'} aria-pressed={statusFilter === status} onPress={() => setStatusFilter(status)} className="capitalize">{status}</Button>)}
           </div>
-        </CardHeader>
-        <CardBody>
-          {keys.length === 0 ? (
-            <div className="text-center py-12">
-              <FaKey className="mx-auto mb-4 text-5xl opacity-20 text-default-300" />
-              <p className="text-default-700 font-bold text-lg mb-2">No API keys yet</p>
-              <p className="text-default-500 mb-4">Create your first API key to integrate with external apps and IoT devices</p>
-              <Button
-                color="primary"
-                startContent={<FaPlus />}
-                onClick={() => {
-                  resetForm();
-                  setIsEditMode(false);
-                  onOpen();
-                }}
-              >
-                Create Your First Key
-              </Button>
+        </div>
+        <CardBody className="p-0">
+          {!keysData ? <p role="status" className="p-8 text-sm text-default-500">Loading keys...</p> : keys.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-4">
+              <div className="bg-default-100 p-5 rounded-full">
+                <FaKey className="text-4xl text-default-500" />
+              </div>
+              <div className="text-center">
+                <p className="font-semibold text-default-600">No API keys yet</p>
+              </div>
             </div>
           ) : (
             <Table
-              aria-label="API Keys table"
+              aria-label="API Keys"
               removeWrapper
               classNames={{
-                base: "max-h-full",
-                th: "bg-default-100 text-default-700 font-semibold",
-                td: "py-4"
+                th: 'bg-default-50 text-default-500 font-semibold text-xs uppercase tracking-wide border-b border-default-200',
+                td: 'py-4',
+                tr: 'border-b border-default-100 last:border-0',
               }}
             >
               <TableHeader>
-                <TableColumn>NAME</TableColumn>
-                <TableColumn>SCOPES</TableColumn>
+                <TableColumn>KEY</TableColumn>
                 <TableColumn>STATUS</TableColumn>
                 <TableColumn>ENDPOINTS</TableColumn>
                 <TableColumn>LAST USED</TableColumn>
-                <TableColumn className="text-right">ACTIONS</TableColumn>
+                <TableColumn align="end">ACTIONS</TableColumn>
               </TableHeader>
-              <TableBody>
-                {keys.map(key => (
-                  <TableRow key={key._id} className="hover:bg-default-100">
+              <TableBody emptyContent="No matching keys">
+                {filteredKeys.map((key) => (
+                  <TableRow key={key._id} className="hover:bg-default-50 transition-colors">
                     <TableCell>
-                      <div>
-                        <p className="font-bold text-foreground">{key.name}</p>
-                        {key.description && <p className="text-xs text-default-500">{key.description}</p>}
+                      <div className="flex flex-col gap-0.5">
+                        <span className="flex items-center gap-2 font-semibold text-foreground">{key.name}{key.kind === 'SERVER_MODULE' ? <Chip size="sm" variant="flat" color="secondary">SERVER</Chip> : null}</span>
+                        {key.description && <span className="text-xs text-default-500 max-w-[220px] truncate">{key.description}</span>}
+                        <span className="text-tiny text-default-500">
+                          Created {timeAgo(key.createdAt)}
+                          {key.rateLimit ? ` | ${key.rateLimit} req/min` : ''}
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {key.scopes.slice(0, 2).map((scope, idx) => (
-                          <Chip key={`scope-${idx}`} size="sm" variant="flat" color="primary">
-                            {scope}
-                          </Chip>
-                        ))}
-                        {key.scopes.length > 2 && (
-                          <Chip size="sm" variant="flat" color="primary">
-                            +{key.scopes.length - 2}
-                          </Chip>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        color={key.isActive ? 'success' : 'danger'}
-                        variant="flat"
-                        size="sm"
-                      >
-                        {key.isActive ? 'ACTIVE' : 'REVOKED'}
+                      <Chip color={key.isActive ? 'success' : 'default'} variant="flat" size="sm" startContent={key.isActive ? <FaCheck size={9} /> : <FaTimes size={9} />}>
+                        {key.isActive ? 'Active' : 'Revoked'}
                       </Chip>
                     </TableCell>
                     <TableCell>
-                      <div className="text-sm space-y-1">
-                        {key.allowedEndpoints && key.allowedEndpoints.length > 0 && (
-                          <div className="text-success font-semibold">{key.allowedEndpoints.length} allowed</div>
-                        )}
-                        {key.blockedEndpoints && key.blockedEndpoints.length > 0 && (
-                          <div className="text-danger">{key.blockedEndpoints.length} blocked</div>
-                        )}
-                        {(!key.allowedEndpoints || key.allowedEndpoints.length === 0) &&
-                         (!key.blockedEndpoints || key.blockedEndpoints.length === 0) && (
-                          <div className="text-default-500">All access</div>
-                        )}
-                        {key.rateLimit && (
-                          <div className="text-warning text-xs">{key.rateLimit}/min limit</div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm text-default-500">
-                      {key.lastUsed ? new Date(key.lastUsed).toLocaleDateString() : 'Never'}
+                      {key.allowedEndpoints && key.allowedEndpoints.length > 0 ? (
+                        <span className="text-sm text-default-600">
+                          <span className="font-semibold text-success">{key.allowedEndpoints.length}</span> allowed
+                          {key.blockedEndpoints && key.blockedEndpoints.length > 0 && <><span> | </span><span className="text-danger">{key.blockedEndpoints.length}</span> blocked</>}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-default-500">All access</span>
+                      )}
                     </TableCell>
                     <TableCell>
-                      {key.isActive && (
-                        <div className="flex gap-2 justify-end">
-                          <Button
-                            isIconOnly
-                            size="sm"
-                            variant="light"
-                            color="primary"
-                            onClick={() => handleViewKey(key)}
-                            title="View key details"
-                          >
-                            <FaEye />
+                      <span className="text-sm text-default-500">{key.lastUsed ? timeAgo(key.lastUsed) : 'Never'}</span>
+                    </TableCell>
+                    <TableCell>
+                      {key.isActive ? (
+                        <div className="flex gap-1 justify-end">
+                          <Button isIconOnly size="sm" variant="light" color="primary" title="View details" onClick={() => { setViewKey(key); onViewOpen(); }}>
+                            <FaEye size={13} />
                           </Button>
-                          <Button
-                            isIconOnly
-                            size="sm"
-                            variant="light"
-                            color="default"
-                            onClick={() => handleEditKey(key)}
-                            title="Edit key"
-                          >
-                            <FaEdit />
+                          <Button isIconOnly size="sm" variant="light" color="default" title="Edit" onClick={() => handleEditKey(key)}>
+                            <FaEdit size={13} />
                           </Button>
-                          <Button
-                            isIconOnly
-                            size="sm"
-                            variant="light"
-                            color="danger"
-                            onClick={() => handleRevoke(key._id)}
-                            title="Revoke key"
-                          >
-                            <FaTrash />
+                          <Button isIconOnly size="sm" variant="light" color="danger" title="Revoke" onClick={() => handleRevoke(key._id)}>
+                            <FaTrash size={13} />
                           </Button>
                         </div>
-                      )}
-                      {!key.isActive && (
-                        <span className="text-danger text-sm">Revoked</span>
+                      ) : (
+                        <div className="flex gap-1 justify-end">
+                          <Button isIconOnly size="sm" variant="light" color="danger" title="Delete permanently" onClick={() => handleDeleteRevoked(key._id)}>
+                            <FaTrash size={13} />
+                          </Button>
+                        </div>
                       )}
                     </TableCell>
                   </TableRow>
@@ -478,355 +360,181 @@ export const ApiKeysPage: React.FC<PageProps> = ({ username }) => {
         </CardBody>
       </Card>
 
-      {/* Create/Edit Modal with 3-Step Wizard */}
-      <Modal 
-        isOpen={isOpen} 
-        onClose={() => { onClose(); resetForm(); }} 
-        size="4xl"
-        scrollBehavior="outside"
-      >
+      <Modal isOpen={isOpen} onClose={() => { onClose(); resetForm(); }} size="3xl" scrollBehavior="inside" backdrop="blur" classNames={appModalClassNames}>
         <ModalContent>
-          {/* Step Indicator */}
-          <div className="px-6 pt-6 pb-4">
-            <div className="flex items-center mb-4">
-              {[1, 2, 3].map((stepNum, idx) => (
-                <React.Fragment key={stepNum}>
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-colors flex-shrink-0 ${
-                    stepNum === step 
-                      ? 'bg-blue-500 text-white' 
-                      : stepNum < step 
-                      ? 'bg-green-500 text-white' 
-                      : 'bg-gray-700 text-gray-400'
-                  }`}>
-                    {stepNum < step ? <FaCheck /> : stepNum}
+          <ModalHeader className="flex flex-col gap-3 pt-5">
+            <div className="flex items-center gap-2">
+              {[1, 2, 3].map((current) => (
+                <React.Fragment key={current}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${current === step ? 'bg-primary text-primary-foreground shadow-md shadow-primary/30' : current < step ? 'bg-success text-success-foreground' : 'bg-default-100 text-default-500'}`}>
+                    {current < step ? <FaCheck size={10} /> : current}
                   </div>
-                  {stepNum < 3 && (
-                    <div className={`flex-1 h-1 mx-2 transition-colors ${
-                      stepNum < step ? 'bg-green-500' : 'bg-gray-700'
-                    }`} />
-                  )}
+                  {current < 3 && <div className={`flex-1 h-0.5 rounded transition-all ${current < step ? 'bg-success' : 'bg-default-200'}`} />}
                 </React.Fragment>
               ))}
             </div>
-            <ModalHeader className="p-0 flex items-center gap-2">
-              <FaLock className="text-blue-400" />
-              {isEditMode ? 'Edit API Key' : 'Create New API Key'} - Step {step} of 3
-            </ModalHeader>
-          </div>
-
-          <Divider />
-
-          {/* Step 1: Key Details */}
-          {step === 1 && (
-            <ModalBody className="space-y-4 py-6">
-              <div className="space-y-4">
-                <h3 className="font-bold text-lg flex items-center gap-2">
-                  <FaKey className="text-sm" /> Basic Information
-                </h3>
-                <Input
-                  label="Key Name *"
-                  placeholder="e.g. IoT Gate Controller, Main Parking System"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  required
-                  description="Give this key a descriptive name"
-                />
-                <Textarea
-                  label="Description"
-                  placeholder="What will this key be used for? Where is it deployed?"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  rows={3}
-                  description="Optional: Add notes about this key's purpose"
-                />
-                <Input
-                  label="Rate Limit (requests/minute)"
-                  type="number"
-                  placeholder="0 for unlimited"
-                  value={String(formData.rateLimit)}
-                  onChange={(e) => setFormData({ ...formData, rateLimit: parseInt(e.target.value) || 0 })}
-                  description="Limit how many requests this key can make per minute"
-                />
+            <div>
+              <div className="flex items-center gap-2 text-lg font-bold">
+                <FaLock className="text-primary text-sm" />
+                {isEditMode ? 'Edit API Key' : 'New API Key'} - Step {step} of 3
               </div>
+              <p className="text-tiny font-normal text-default-500 mt-0.5">
+                {step === 1 ? 'Name and describe your key' : step === 2 ? 'Choose which endpoints this key can call' : 'Review and confirm'}
+              </p>
+            </div>
+          </ModalHeader>
+
+          {step === 1 && (
+            <ModalBody className="py-6 flex flex-col gap-5">
+              <Input label="Name" placeholder="e.g. Gate controller" variant="bordered" value={formData.name} onValueChange={(value) => setFormData({ ...formData, name: value })} isRequired startContent={<FaKey className="text-default-500 text-sm" />} />
+              <Textarea label="Description" placeholder="What is this key for? Where is it deployed?" variant="bordered" value={formData.description} onValueChange={(value) => setFormData({ ...formData, description: value })} minRows={2}  />
+              <Input label="Rate Limit (requests/minute)" type="number" variant="bordered" placeholder="0 for unlimited" value={String(formData.rateLimit)} onValueChange={(value) => setFormData({ ...formData, rateLimit: parseInt(value, 10) || 0 })}  />
             </ModalBody>
           )}
 
-          {/* Step 2: Plugin & Endpoint Access */}
           {step === 2 && (
-            <ModalBody className="space-y-4 py-6">
-              <div className="space-y-3">
-                <h3 className="font-bold text-lg">Plugin & Endpoint Access</h3>
-                <p className="text-sm text-gray-400">Select which endpoints this key can access for each plugin</p>
-                {pluginsData && pluginsData.length > 0 ? (
-                  <div className="flex gap-3 border border-default-200 rounded-lg overflow-hidden" style={{ height: '380px', backgroundColor: 'var(--bg-card)' }}>
-                    {/* Plugin List - Left Sidebar */}
-                    <div className="w-56 border-r border-default-200 overflow-y-auto bg-default-50">
-                      {pluginsData.map((plugin: any) => {
-                        const pluginEndpoints = plugin?.apiEndpoints || [];
-                        const enabledCount = pluginEndpoints.filter((ep: string) => 
-                          formData.allowedEndpoints.includes(`${plugin.name}/${ep}`)
-                        ).length;
-                        const allEnabled = enabledCount === pluginEndpoints.length && pluginEndpoints.length > 0;
-                        const someEnabled = enabledCount > 0 && enabledCount < pluginEndpoints.length;
+            <ModalBody className="py-6">
+              <p className="text-sm text-default-500 mb-3">Select which plugin endpoints this key can access</p>
+              {apiPlugins.length > 0 ? (
+                <div className="flex flex-col sm:flex-row border border-default-200 rounded-xl overflow-hidden max-h-[480px]">
+                  <div className="w-full sm:w-48 shrink-0 border-b sm:border-b-0 sm:border-r border-default-200 overflow-y-auto max-h-36 sm:max-h-none bg-default-50">
+                    {apiPlugins.map((plugin) => {
+                      const endpoints = plugin?.apiEndpoints || [];
+                      const enabled = endpoints.filter((endpoint: string) => formData.allowedEndpoints.includes(`${plugin.name}/${endpoint}`)).length;
+                      const allSelected = enabled === endpoints.length && endpoints.length > 0;
+                      const partiallySelected = enabled > 0 && enabled < endpoints.length;
 
-                        return (
-                          <div
-                            key={plugin._id}
-                            className={`border-b border-default-200 transition-colors ${
-                              selectedPluginTab === plugin.name ? 'bg-default-100' : 'hover:bg-default-100'
-                            }`}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => setSelectedPluginTab(plugin.name)}
-                              className="w-full px-4 py-3 text-left text-sm transition-colors flex items-center justify-between gap-2"
-                            >
-                              <div className="flex-1 min-w-0">
-                                <p className="font-bold text-foreground truncate">{plugin.name}</p>
-                                <p className="text-xs text-default-500">{pluginEndpoints.length} endpoints</p>
-                              </div>
-                              <Checkbox
-                                isSelected={allEnabled}
-                                isIndeterminate={someEnabled}
-                                onValueChange={(checked) => {
-                                  const pluginEndpoints = plugin?.apiEndpoints || [];
-                                  if (checked || someEnabled) {
-                                    // Enable all endpoints for this plugin
-                                    const newAllowed = [...formData.allowedEndpoints];
-                                    pluginEndpoints.forEach((ep: string) => {
-                                      const key = `${plugin.name}/${ep}`;
-                                      if (!newAllowed.includes(key)) {
-                                        newAllowed.push(key);
-                                      }
-                                    });
-                                    setFormData({
-                                      ...formData,
-                                      allowedEndpoints: newAllowed
-                                    });
-                                  } else {
-                                    // Disable all endpoints for this plugin
-                                    const pluginPrefix = `${plugin.name}/`;
-                                    setFormData({
-                                      ...formData,
-                                      allowedEndpoints: formData.allowedEndpoints.filter(e => !e.startsWith(pluginPrefix))
-                                    });
-                                  }
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                                size="sm"
-                              />
-                            </button>
+                      return (
+                        <div key={plugin._id} className={`flex items-center pr-3 border-b border-default-200 ${selectedPluginTab === plugin.name ? 'bg-default-100' : 'hover:bg-default-100'}`}>
+                          <button type="button" onClick={() => setSelectedPluginTab(plugin.name)} className="flex-1 min-w-0 px-4 py-3 text-left text-sm flex items-center justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-foreground truncate">{plugin.name}</p>
+                              <p className="text-xs text-default-500">{endpoints.length} endpoints | {enabled} enabled</p>
+                            </div>
+                          </button>
+                            <Checkbox
+                              aria-label={`Enable all ${plugin.name} endpoints`}
+                              isSelected={allSelected}
+                              isIndeterminate={partiallySelected}
+                              size="sm"
+                              onClick={(event) => event.stopPropagation()}
+                              onValueChange={(checked) => {
+                                if (checked || partiallySelected) {
+                                  const nextAllowed = [...formData.allowedEndpoints];
+                                  endpoints.forEach((endpoint: string) => {
+                                    const key = `${plugin.name}/${endpoint}`;
+                                    if (!nextAllowed.includes(key)) nextAllowed.push(key);
+                                  });
+                                  setFormData({ ...formData, allowedEndpoints: nextAllowed });
+                                } else {
+                                  setFormData({ ...formData, allowedEndpoints: formData.allowedEndpoints.filter((entry) => !entry.startsWith(`${plugin.name}/`)) });
+                                }
+                              }}
+                            />
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex-1 p-4 overflow-y-auto">
+                    {selectedPluginTab ? (() => {
+                      const selectedPlugin = apiPlugins.find((plugin) => plugin.name === selectedPluginTab);
+                      const endpoints = selectedPlugin?.apiEndpoints || [];
+                      if (endpoints.length === 0) {
+                        return <p className="text-sm text-default-500 text-center py-12">No endpoints for this plugin</p>;
+                      }
+
+                      return (
+                        <div className="flex flex-col gap-3">
+                          <div>
+                            <p className="font-semibold text-foreground">{selectedPluginTab}</p>
+                            <p className="text-xs text-default-500">{endpoints.filter((endpoint: string) => formData.allowedEndpoints.includes(`${selectedPluginTab}/${endpoint}`)).length}/{endpoints.length} enabled</p>
                           </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Endpoints - Right Panel */}
-                    <div className="flex-1 p-4 overflow-y-auto">
-                      {selectedPluginTab ? (
-                        <>
-                          {(() => {
-                            const plugin = pluginsData.find((p: any) => p.name === selectedPluginTab);
-                            const endpoints = plugin?.apiEndpoints || [];
-
-                            if (endpoints.length === 0) {
-                              return (
-                                <div className="text-center py-12 text-default-500">
-                                  <p>No API endpoints for this plugin</p>
-                                </div>
-                              );
-                            }
-
+                          {endpoints.map((endpoint: string, index: number) => {
+                            const endpointKey = `${selectedPluginTab}/${endpoint}`;
+                            const isEnabled = formData.allowedEndpoints.includes(endpointKey);
                             return (
-                              <div className="space-y-3">
+                              <div key={index} className={`flex items-center justify-between p-3 rounded-lg border transition-all ${isEnabled ? 'bg-success/5 border-success/30' : 'bg-default-50 border-default-200 hover:border-default-300'}`}>
                                 <div>
-                                  <h4 className="font-bold text-foreground">{selectedPluginTab}</h4>
-                                  <p className="text-xs text-default-500 mt-1">
-                                    {endpoints.filter((ep: string) => formData.allowedEndpoints.includes(`${selectedPluginTab}/${ep}`)).length} of {endpoints.length} enabled
-                                  </p>
+                                  <p className="text-sm font-medium text-foreground">{endpoint}</p>
+                                  <p className="text-xs text-default-500 font-mono">/api/{selectedPluginTab}/{endpoint}</p>
                                 </div>
-                                <div className="space-y-2">
-                                  {endpoints.map((endpoint: string, idx: number) => {
-                                    const endpointKey = `${selectedPluginTab}/${endpoint}`;
-                                    const isEnabled = formData.allowedEndpoints.includes(endpointKey);
-                                    
-                                    return (
-                                      <div 
-                                        key={idx} 
-                                        className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
-                                          isEnabled 
-                                            ? 'bg-success-50 border-success-200' 
-                                            : 'bg-default-100 border-default-200 hover:border-default-300'
-                                        }`}
-                                      >
-                                        <div className="flex-1">
-                                          <div className="font-semibold text-sm text-foreground">{endpoint}</div>
-                                          <div className="text-xs text-default-500 mt-1 font-mono">/api/{selectedPluginTab}/{endpoint}</div>
-                                        </div>
-                                        <Checkbox
-                                          isSelected={isEnabled}
-                                          onValueChange={(checked) => {
-                                            if (checked) {
-                                              setFormData({
-                                                ...formData,
-                                                allowedEndpoints: [...formData.allowedEndpoints, endpointKey]
-                                              });
-                                            } else {
-                                              setFormData({
-                                                ...formData,
-                                                allowedEndpoints: formData.allowedEndpoints.filter(e => e !== endpointKey)
-                                              });
-                                            }
-                                          }}
-                                          size="lg"
-                                          color="success"
-                                        />
-                                      </div>
-                                    );
-                                  })}
-                                </div>
+                                <Checkbox
+                                  aria-label={`Allow ${endpointKey}`}
+                                  isSelected={isEnabled}
+                                  size="lg"
+                                  color="success"
+                                  onValueChange={(checked) => {
+                                    setFormData({
+                                      ...formData,
+                                      allowedEndpoints: checked ? [...formData.allowedEndpoints, endpointKey] : formData.allowedEndpoints.filter((entry) => entry !== endpointKey),
+                                    });
+                                  }}
+                                />
                               </div>
                             );
-                          })()}
-                        </>
-                      ) : (
-                        <div className="text-center py-12 text-default-500">
-                          <p>Select a plugin to view endpoints</p>
+                          })}
                         </div>
-                      )}
-                    </div>
+                      );
+                    })() : <p className="text-sm text-default-500 text-center py-12">Select a plugin to manage its endpoints</p>}
                   </div>
-                ) : (
-                  <div className="text-center py-8 text-default-500">
-                    <p>No plugins available</p>
-                  </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                <p className="text-sm text-default-500 text-center py-8">No registered API endpoints. Publish a plugin with API endpoints first.</p>
+              )}
             </ModalBody>
           )}
 
-          {/* Step 3: Summary & Confirmation */}
           {step === 3 && (
-            <ModalBody className="space-y-6 py-6">
-              <div>
-                <h3 className="font-bold text-lg mb-4">Configuration Summary</h3>
-                <div className="space-y-4">
-                  {/* Key Details Summary */}
-                  <Card className="bg-default-100 border border-default-200">
-                    <CardBody className="space-y-2">
-                      <div className="font-bold text-primary mb-2">Key Details</div>
-                      <div className="flex justify-between">
-                        <span className="text-default-600">Name:</span>
-                        <span className="text-foreground font-mono font-bold">{formData.name || '—'}</span>
-                      </div>
-                      {formData.description && (
-                        <div className="flex justify-between">
-                          <span className="text-default-600">Description:</span>
-                          <span className="text-foreground text-right text-sm">{formData.description}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between">
-                        <span className="text-default-600">Rate Limit:</span>
-                        <span className="text-foreground">{formData.rateLimit > 0 ? `${formData.rateLimit} req/min` : 'Unlimited'}</span>
-                      </div>
-                    </CardBody>
-                  </Card>
-
-                  {/* Endpoints Summary */}
-                  <Card className="bg-success-50 border border-success-200">
-                    <CardBody className="space-y-3">
-                      <div className="font-bold text-success mb-2">Enabled Endpoints</div>
-                      {formData.allowedEndpoints.length > 0 ? (
-                        <div className="space-y-2">
-                          {/* Group endpoints by plugin */}
-                          {Array.from(new Set(formData.allowedEndpoints.map(e => e.split('/')[0]))).map((plugin) => (
-                            <div key={plugin}>
-                              <p className="text-sm font-semibold text-foreground mb-1">{plugin}</p>
-                              <div className="flex flex-wrap gap-2 ml-2">
-                                {formData.allowedEndpoints
-                                  .filter(e => e.startsWith(`${plugin}/`))
-                                  .map((endpoint) => (
-                                    <Chip
-                                      key={endpoint}
-                                      size="sm"
-                                      variant="flat"
-                                      color="success"
-                                      className="font-mono text-xs"
-                                    >
-                                      {endpoint.split('/')[1]}
-                                    </Chip>
-                                  ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-default-600 text-sm">No endpoints selected</div>
-                      )}
-                    </CardBody>
-                  </Card>
-
-                  {/* Stats */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <Card className="bg-primary-50 border border-primary-200">
-                      <CardBody className="p-3 text-center">
-                        <div className="text-primary font-bold text-xl">{new Set(formData.allowedEndpoints.map(e => e.split('/')[0])).size}</div>
-                        <div className="text-xs text-default-600">Plugins</div>
-                      </CardBody>
-                    </Card>
-                    <Card className="bg-success-50 border border-success-200">
-                      <CardBody className="p-3 text-center">
-                        <div className="text-success font-bold text-xl">{formData.allowedEndpoints.length}</div>
-                        <div className="text-xs text-default-600">Endpoints</div>
-                      </CardBody>
-                    </Card>
+            <ModalBody className="py-6 flex flex-col gap-4">
+              <p className="text-sm font-semibold text-default-600">Review your configuration</p>
+              <div className="bg-default-50 border border-default-200 rounded-xl p-4 flex flex-col gap-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-default-500">Name</span>
+                  <span className="font-semibold font-mono">{formData.name || '-'}</span>
+                </div>
+                {formData.description && (
+                  <div className="flex justify-between text-sm gap-4">
+                    <span className="text-default-500">Description</span>
+                    <span className="text-right max-w-[60%]">{formData.description}</span>
                   </div>
+                )}
+                <div className="flex justify-between text-sm">
+                  <span className="text-default-500">Rate Limit</span>
+                  <span>{formData.rateLimit > 0 ? `${formData.rateLimit} req/min` : 'Unlimited'}</span>
+                </div>
+                <Divider />
+                <div className="flex justify-between text-sm">
+                  <span className="text-default-500">Plugins</span>
+                  <Chip size="sm" color="primary" variant="flat">{new Set(formData.allowedEndpoints.map((entry) => entry.split('/')[0])).size}</Chip>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-default-500">Endpoints</span>
+                  <Chip size="sm" color="success" variant="flat">{formData.allowedEndpoints.length} allowed</Chip>
                 </div>
               </div>
             </ModalBody>
           )}
 
-          <Divider />
-
-          {/* Step Buttons */}
-          <ModalFooter className="space-x-2">
-            <Button 
-              color="danger" 
-              variant="light" 
-              onPress={() => { onClose(); resetForm(); }}
-            >
-              Cancel
-            </Button>
-            {step > 1 && (
-              <Button 
-                variant="bordered"
-                onPress={() => setStep(step - 1)}
-              >
-                ← Previous
-              </Button>
-            )}
+          <ModalFooter className="gap-2">
+            <Button variant="light" color="danger" onPress={() => { onClose(); resetForm(); }}>Cancel</Button>
+            {step > 1 && <Button variant="bordered" className="border-default-300 bg-default-50 text-foreground hover:bg-default-100 dark:border-white/30 dark:bg-white/5 dark:text-white dark:hover:bg-white/10" onPress={() => setStep(step - 1)}>{'<'} Back</Button>}
             {step < 3 ? (
-              <Button 
-                color="primary"
-                onPress={() => {
-                  if (step === 1 && !formData.name.trim()) {
-                    showAlert('Please enter a key name');
-                    return;
-                  }
-                  if (step === 2 && formData.allowedEndpoints.length === 0) {
-                    showAlert('Please enable at least one endpoint');
-                    return;
-                  }
-                  setStep(step + 1);
-                }}
-              >
-                Next →
+              <Button color="primary" onPress={() => {
+                if (step === 1 && !formData.name.trim()) {
+                  showAlert('Please enter a key name');
+                  return;
+                }
+                if (step === 2 && formData.allowedEndpoints.length === 0) {
+                  showAlert('Please enable at least one endpoint');
+                  return;
+                }
+                setStep(step + 1);
+              }}>
+                Continue {'>'}
               </Button>
             ) : (
-              <Button 
-                color="success"
-                onClick={isEditMode ? handleUpdateKey : handleCreateKey}
-              >
+              <Button color="success" onClick={isEditMode ? handleUpdateKey : handleCreateKey}>
                 {isEditMode ? 'Save Changes' : 'Create Key'}
               </Button>
             )}
@@ -834,243 +542,78 @@ export const ApiKeysPage: React.FC<PageProps> = ({ username }) => {
         </ModalContent>
       </Modal>
 
-      {/* View Key Modal */}
-      <Modal 
-        isOpen={isViewOpen} 
-        onClose={onViewClose} 
-        size="3xl"
-      >
+      <Modal isOpen={isViewOpen} onClose={onViewClose} size="2xl" backdrop="blur" classNames={appModalClassNames}>
         <ModalContent>
           <ModalHeader className="flex items-center gap-2">
-            <FaEye className="text-primary" />
-            API Key Details
+            <FaShieldAlt className="text-primary" /> Key Details
           </ModalHeader>
-          <Divider />
-          <ModalBody className="space-y-4 py-6">
+          <ModalBody className="py-6 flex flex-col gap-4">
             {viewKey && (
               <>
-                {/* Key Information */}
-                <Card className="bg-default-50 border border-default-200">
-                  <CardBody className="space-y-3">
-                    <div>
-                      <h3 className="font-bold text-lg text-foreground mb-1">{viewKey.name}</h3>
-                      {viewKey.description && (
-                        <p className="text-sm text-default-600">{viewKey.description}</p>
-                      )}
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="font-bold text-lg">{viewKey.name}</h3>
+                    {viewKey.description && <p className="text-sm text-default-500 mt-0.5">{viewKey.description}</p>}
+                  </div>
+                  <Chip color={viewKey.isActive ? 'success' : 'danger'} variant="flat" size="sm">
+                    {viewKey.isActive ? 'Active' : 'Revoked'}
+                  </Chip>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  {[
+                    { label: 'Created', value: new Date(viewKey.createdAt).toLocaleString() },
+                    { label: 'Last Used', value: viewKey.lastUsed ? new Date(viewKey.lastUsed).toLocaleString() : 'Never' },
+                    { label: 'Rate Limit', value: viewKey.rateLimit ? `${viewKey.rateLimit} req/min` : 'Unlimited' },
+                    { label: 'Endpoints', value: viewKey.allowedEndpoints?.length ?? 'All' },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-default-50 border border-default-200 rounded-lg p-3">
+                      <p className="text-default-500 text-xs mb-1">{label}</p>
+                      <p className="font-semibold">{value}</p>
                     </div>
-                    <Divider />
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="text-default-500">Status:</span>
-                        <div className="mt-1">
-                          <Chip
-                            color={viewKey.isActive ? 'success' : 'danger'}
-                            variant="flat"
-                            size="sm"
-                          >
-                            {viewKey.isActive ? 'ACTIVE' : 'REVOKED'}
-                          </Chip>
-                        </div>
-                      </div>
-                      <div>
-                        <span className="text-default-500">Created:</span>
-                        <div className="mt-1 text-foreground font-semibold">
-                          {new Date(viewKey.createdAt).toLocaleString()}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="text-default-500">Last Used:</span>
-                        <div className="mt-1 text-foreground font-semibold">
-                          {viewKey.lastUsed ? new Date(viewKey.lastUsed).toLocaleString() : 'Never'}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="text-default-500">Rate Limit:</span>
-                        <div className="mt-1 text-foreground font-semibold">
-                          {viewKey.rateLimit ? `${viewKey.rateLimit} req/min` : 'Unlimited'}
-                        </div>
-                      </div>
-                    </div>
-                  </CardBody>
-                </Card>
-
-                {/* API Key Value */}
-                <Card className="bg-warning-50 border border-warning-200">
-                  <CardBody className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-warning">
-                        <FaLock />
-                        <span className="font-bold">API Key Value</span>
-                      </div>
-                      <Button
-                        isIconOnly
-                        size="sm"
-                        variant="light"
-                        color="warning"
-                        onClick={() => setShowKeyValue(!showKeyValue)}
-                        title={showKeyValue ? "Hide key" : "Show key"}
-                      >
-                        {showKeyValue ? <FaEyeSlash /> : <FaEye />}
-                      </Button>
-                    </div>
-                    <p className="text-sm text-default-700">
-                      For security reasons, the full API key is only shown once during creation. 
-                      If you've lost this key, you'll need to revoke it and create a new one.
-                    </p>
-                    <div className="bg-default-100 p-3 rounded-lg font-mono text-sm text-default-600 border border-default-200 relative">
-                      {showKeyValue ? (
-                        <div className="text-center py-2 text-warning font-semibold">
-                          Key value is not stored and cannot be retrieved
-                        </div>
-                      ) : (
-                        '••••••••••••••••••••••••••••••••'
-                      )}
-                    </div>
-                  </CardBody>
-                </Card>
-
-                {/* Permissions */}
-                <Card className="bg-default-50 border border-default-200">
-                  <CardBody className="space-y-3">
-                    <h4 className="font-bold text-foreground">Permissions & Access</h4>
-                    
-                    {/* Scopes */}
-                    <div>
-                      <p className="text-sm text-default-500 mb-2">Scopes ({viewKey.scopes.length}):</p>
-                      <div className="flex flex-wrap gap-2">
-                        {viewKey.scopes.map((scope, idx) => (
-                          <Chip key={idx} size="sm" variant="flat" color="primary">
-                            {scope}
-                          </Chip>
-                        ))}
-                      </div>
-                    </div>
-
-                    <Divider />
-
-                    {/* Allowed Endpoints */}
-                    {viewKey.allowedEndpoints && viewKey.allowedEndpoints.length > 0 && (
-                      <div>
-                        <p className="text-sm text-default-500 mb-2">
-                          Allowed Endpoints ({viewKey.allowedEndpoints.length}):
-                        </p>
-                        <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {/* Group by plugin */}
-                          {Array.from(new Set(viewKey.allowedEndpoints.map(e => e.split('/')[0]))).map((plugin) => (
-                            <div key={plugin} className="bg-success-50 p-2 rounded border border-success-200">
-                              <p className="text-xs font-bold text-success mb-1">{plugin}</p>
-                              <div className="flex flex-wrap gap-1">
-                                {viewKey.allowedEndpoints
-                                  ?.filter(e => e.startsWith(`${plugin}/`))
-                                  .map((endpoint) => (
-                                    <Chip
-                                      key={endpoint}
-                                      size="sm"
-                                      variant="flat"
-                                      color="success"
-                                      className="font-mono text-xs"
-                                    >
-                                      {endpoint.split('/')[1]}
-                                    </Chip>
-                                  ))}
-                              </div>
-                            </div>
+                  ))}
+                </div>
+                <div className="bg-warning/5 border border-warning/30 rounded-xl p-4 flex items-start gap-3">
+                  <FaExclamationTriangle className="text-warning mt-0.5 flex-shrink-0" />
+                  <p className="text-sm text-default-600 dark:text-white/80">
+                    For security, the full API key is only shown once at creation time. If you lose it, revoke this key and create a new one.
+                  </p>
+                </div>
+                {viewKey.allowedEndpoints && viewKey.allowedEndpoints.length > 0 && (
+                  <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                    <p className="text-xs font-semibold text-default-500 uppercase tracking-wide">Allowed Endpoints</p>
+                    {Array.from(new Set(viewKey.allowedEndpoints.map((entry) => entry.split('/')[0]))).map((plugin) => (
+                      <div key={plugin} className="bg-success/5 border border-success/20 rounded-lg p-3">
+                        <p className="text-xs font-bold text-success mb-2">{plugin}</p>
+                        <div className="flex flex-wrap gap-1">
+                          {viewKey.allowedEndpoints!.filter((entry) => entry.startsWith(`${plugin}/`)).map((entry) => (
+                            <Chip key={entry} size="sm" variant="flat" color="success" className="font-mono text-xs">
+                              {entry.split('/')[1]}
+                            </Chip>
                           ))}
                         </div>
                       </div>
-                    )}
-
-                    {/* Blocked Endpoints */}
-                    {viewKey.blockedEndpoints && viewKey.blockedEndpoints.length > 0 && (
-                      <>
-                        <Divider />
-                        <div>
-                          <p className="text-sm text-default-500 mb-2">
-                            Blocked Endpoints ({viewKey.blockedEndpoints.length}):
-                          </p>
-                          <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                            {viewKey.blockedEndpoints.map((endpoint) => (
-                              <Chip
-                                key={endpoint}
-                                size="sm"
-                                variant="flat"
-                                color="danger"
-                                className="font-mono"
-                              >
-                                {endpoint}
-                              </Chip>
-                            ))}
-                          </div>
-                        </div>
-                      </>
-                    )}
-
-                    {(!viewKey.allowedEndpoints || viewKey.allowedEndpoints.length === 0) &&
-                     (!viewKey.blockedEndpoints || viewKey.blockedEndpoints.length === 0) && (
-                      <div className="text-center py-4 text-default-500">
-                        <p>This key has full access to all endpoints</p>
-                      </div>
-                    )}
-                  </CardBody>
-                </Card>
+                    ))}
+                  </div>
+                )}
               </>
             )}
           </ModalBody>
-          <Divider />
           <ModalFooter>
-            <Button color="default" variant="light" onPress={onViewClose}>
-              Close
-            </Button>
+            <Button variant="light" onPress={onViewClose}>Close</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
 
-      {/* Alert Modal */}
-      <Modal isOpen={isAlertOpen} onClose={onAlertClose} size="sm">
-        <ModalContent>
-          <ModalHeader className="flex gap-1">
-            <span className="text-primary">Alert</span>
-          </ModalHeader>
-          <Divider />
-          <ModalBody>
-            <p className="text-default-700">{alertMessage}</p>
-          </ModalBody>
-          <Divider />
-          <ModalFooter>
-            <Button color="primary" onPress={onAlertClose}>
-              OK
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-
-      {/* Confirm Modal */}
-      <Modal isOpen={isConfirmOpen} onClose={onConfirmClose} size="sm">
-        <ModalContent>
-          <ModalHeader className="flex gap-1">
-            <span className="text-warning">Confirm Action</span>
-          </ModalHeader>
-          <Divider />
-          <ModalBody>
-            <p className="text-default-700">{confirmConfig?.message}</p>
-          </ModalBody>
-          <Divider />
-          <ModalFooter>
-            <Button color="default" variant="light" onPress={onConfirmClose}>
-              Cancel
-            </Button>
-            <Button
-              color="warning"
-              onPress={() => {
-                confirmConfig?.onConfirm();
-                onConfirmClose();
-              }}
-            >
-              Confirm
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <AppAlertDialog isOpen={isAlertOpen} onClose={onAlertClose} message={alertMessage} />
+      <AppConfirmDialog
+        isOpen={isConfirmOpen}
+        onClose={onConfirmClose}
+        message={confirmConfig?.message || ''}
+        onConfirm={() => {
+          confirmConfig?.onConfirm();
+          onConfirmClose();
+        }}
+      />
     </div>
   );
 };

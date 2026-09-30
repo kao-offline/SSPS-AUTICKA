@@ -14,7 +14,7 @@ export const updateSpaceStatus = mutation({
     },
     handler: async (ctx, args) => {
         const isValid = await validateKey(ctx, args.apiKey);
-        if (!isValid) {
+        if (!isValid.valid || !isValid.scopes?.includes('data:write')) {
             throw new Error("Invalid or inactive API Key");
         }
 
@@ -44,11 +44,11 @@ export const logCarEntry = mutation({
     args: {
         apiKey: v.string(),
         licensePlate: v.string(),
-        direction: v.string(), // "in" or "out"
+        direction: v.union(v.literal("in"), v.literal("out")),
     },
     handler: async (ctx, args) => {
         const isValid = await validateKey(ctx, args.apiKey);
-        if (!isValid) {
+        if (!isValid.valid || !isValid.scopes?.includes('data:write')) {
             throw new Error("Invalid or inactive API Key");
         }
 

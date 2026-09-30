@@ -1,3 +1,4 @@
+import { ManagementHeader } from '@/components/management-header';
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useAction, useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
@@ -35,19 +36,22 @@ import {
   Tooltip,
 } from '@heroui/react';
 import { AlertBox } from '@/components/heroui-components';
-import { 
-  FaUser, 
-  FaShieldAlt, 
-  FaEllipsisV, 
-  FaEdit, 
-  FaTrash, 
-  FaPlus, 
-  FaSearch, 
-  FaCheckCircle, 
+import { AppConfirmDialog, appModalClassNames } from '@/components/app-dialogs';
+import {
+  FaUser,
+  FaShieldAlt,
+  FaEllipsisV,
+  FaEdit,
+  FaTrash,
+  FaPlus,
+  FaSearch,
+  FaCheckCircle,
   FaTimesCircle,
   FaUserShield,
   FaPlug,
-  FaKey
+  FaKey,
+  FaCheck,
+  FaTimes
 } from 'react-icons/fa';
 
 interface PageProps {
@@ -62,6 +66,8 @@ interface User {
   hashPassword?: string;
   email?: string;
   image?: string;
+  isApproved?: boolean;
+  createdAt?: number;
 }
 
 interface PluginItem {
@@ -101,12 +107,16 @@ const parseUserData = (value?: string): ParsedUserData => {
 
 export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) => {
   const { isOpen, onOpen, onOpenChange, onClose } = useDisclosure();
+  const { isOpen: isPhotoOpen, onOpen: onPhotoOpen, onOpenChange: onPhotoOpenChange, onClose: onPhotoClose } = useDisclosure();
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isPhotoSubmitting, setIsPhotoSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [photoTarget, setPhotoTarget] = useState<User | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+  const [confirmState, setConfirmState] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -124,6 +134,8 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
   const createUserAction = useAction((api.context as any).createUserAction);
   const updateUserAction = useAction(api.context.updateUserAction);
   const deleteUserAction = useAction(api.context.deleteUserAction);
+  const approveAccount = useMutation(api.context.approveAccount);
+  const rejectAccount = useMutation(api.context.rejectAccount);
   const generateUploadUrl = useMutation(api.context.generateUploadUrl);
 
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
@@ -136,6 +148,7 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
     }
     return users.filter((user) => (user.username || '').toLowerCase().includes(term));
   }, [users, searchTerm]);
+
 
   const userStats = useMemo(() => {
     const adminCount = users.filter((user) => parseUserData(user.usrData).role === 'admin').length;
@@ -293,17 +306,56 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
 
   const handleDeleteUser = async (user: User) => {
     if (user.username === username) return;
-    
-    if (window.confirm(`Are you sure you want to delete ${user.username}?`)) {
-      try {
-        await deleteUserAction({ userId: user._id });
-        refreshUserData();
-        setFeedback({ type: 'success', message: 'User deleted successfully.' });
-      } catch (error) {
-        console.error('Error deleting user:', error);
-        setFeedback({ type: 'error', message: 'Error deleting user. Please try again.' });
-      }
+
+    setConfirmState({
+      message: `Are you sure you want to delete ${user.username}?`,
+      onConfirm: async () => {
+        try {
+          await deleteUserAction({ userId: user._id });
+          refreshUserData();
+          setFeedback({ type: 'success', message: 'User deleted successfully.' });
+        } catch (error) {
+          console.error('Error deleting user:', error);
+          setFeedback({ type: 'error', message: 'Error deleting user. Please try again.' });
+        } finally {
+          setConfirmState(null);
+        }
+      },
+    });
+  };
+
+  const handleApproveUser = async (user: User) => {
+    try {
+      setIsSubmitting(true);
+      await approveAccount({ userId: user._id as any });
+      setFeedback({ type: 'success', message: `User ${user.username} approved successfully.` });
+      refreshUserData();
+    } catch (error) {
+      console.error('Error approving user:', error);
+      setFeedback({ type: 'error', message: 'Error approving user. Please try again.' });
+    } finally {
+      setIsSubmitting(false);
     }
+  };
+
+  const handleRejectUser = async (user: User) => {
+    setConfirmState({
+      message: `Are you sure you want to reject and delete ${user.username}?`,
+      onConfirm: async () => {
+        try {
+          setIsSubmitting(true);
+          await rejectAccount({ userId: user._id as any });
+          setFeedback({ type: 'success', message: `User ${user.username} rejected and deleted.` });
+          refreshUserData();
+        } catch (error) {
+          console.error('Error rejecting user:', error);
+          setFeedback({ type: 'error', message: 'Error rejecting user. Please try again.' });
+        } finally {
+          setIsSubmitting(false);
+          setConfirmState(null);
+        }
+      },
+    });
   };
 
   const renderCell = useCallback((user: User, columnKey: React.Key) => {
@@ -319,8 +371,8 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
           <HeroUser
             avatarProps={{
               radius: "lg",
-              src: user.image ? (user.image.startsWith('http') ? user.image : `https://dedicated-koala-14.convex.cloud/api/storage/get/${user.image}`) : undefined,
-              fallback: <FaUser className="text-default-400" />
+              src: (user as any).imageUrl || undefined,
+              fallback: <FaUser className="text-default-500" />
             }}
             description={user.email || `@${user.username}`}
             name={user.username}
@@ -344,12 +396,12 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
         return (
           <Chip
             className="capitalize"
-            color={userData.isActive ? "success" : "danger"}
+            color={user.isApproved === false ? "warning" : (userData.isActive ? "success" : "danger")}
             size="sm"
             variant="flat"
-            startContent={userData.isActive ? <FaCheckCircle size={12} /> : <FaTimesCircle size={12} />}
+            startContent={user.isApproved === false ? <Spinner size="sm" color="warning" className="scale-75" /> : (userData.isActive ? <FaCheckCircle size={12} /> : <FaTimesCircle size={12} />)}
           >
-            {userData.isActive ? "Active" : "Inactive"}
+            {user.isApproved === false ? "Pending" : (userData.isActive ? "Active" : "Inactive")}
           </Chip>
         );
       case "plugins":
@@ -369,31 +421,68 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
                 )}
               </>
             ) : (
-              <span className="text-tiny text-default-400">No plugins</span>
+              <span className="text-tiny text-default-500">No plugins</span>
             )}
           </div>
         );
       case "actions":
+        if (user.isApproved === false) {
+          return (
+            <div className="flex gap-2 justify-end">
+              <Button
+                isIconOnly
+                size="sm"
+                color="success"
+                variant="flat"
+                onClick={() => handleApproveUser(user)}
+                isLoading={isSubmitting}
+              >
+                <FaCheck />
+              </Button>
+              <Button
+                isIconOnly
+                size="sm"
+                color="danger"
+                variant="flat"
+                onClick={() => handleRejectUser(user)}
+                isLoading={isSubmitting}
+              >
+                <FaTimes />
+              </Button>
+            </div>
+          );
+        }
         return (
           <div className="relative flex justify-end items-center gap-2">
             <Dropdown className="bg-background border-1 border-default-200">
               <DropdownTrigger>
                 <Button isIconOnly radius="full" size="sm" variant="light">
-                  <FaEllipsisV className="text-default-400" />
+                  <FaEllipsisV className="text-default-500" />
                 </Button>
               </DropdownTrigger>
               <DropdownMenu aria-label="Action menu" disabledKeys={user.username === username ? ["delete"] : []}>
-                <DropdownItem 
-                  key="edit" 
+                <DropdownItem
+                  key="edit"
                   startContent={<FaEdit />}
                   onClick={() => handleOpenModal(user)}
                 >
                   Edit User
                 </DropdownItem>
-                <DropdownItem 
-                  key="delete" 
-                  className="text-danger" 
-                  color="danger" 
+                <DropdownItem
+                  key="photo"
+                  startContent={<FaUser />}
+                  onClick={() => {
+                    setPhotoTarget(user);
+                    setSelectedImage(null);
+                    onPhotoOpen();
+                  }}
+                >
+                  Change Photo
+                </DropdownItem>
+                <DropdownItem
+                  key="delete"
+                  className="text-danger"
+                  color="danger"
                   startContent={<FaTrash />}
                   onClick={() => handleDeleteUser(user)}
                 >
@@ -417,59 +506,11 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
   }
 
   return (
-    <div className="w-full flex flex-col gap-6 p-4 md:p-8">
-      {/* Header Section */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Account Management</h1>
-          <p className="text-default-500">View and manage system users and their permissions.</p>
-        </div>
-        <Button 
-          color="primary" 
-          endContent={<FaPlus />} 
-          onClick={() => handleOpenModal()}
-          className="shadow-lg shadow-primary/20"
-        >
-          New Account
-        </Button>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="border-none bg-gradient-to-br from-primary/10 to-transparent shadow-sm">
-          <CardBody className="flex flex-row items-center gap-4 py-5">
-            <div className="bg-primary/20 p-3 rounded-xl">
-              <FaUser className="text-primary text-xl" />
-            </div>
-            <div>
-              <p className="text-tiny uppercase font-bold text-default-500">Total Users</p>
-              <p className="text-2xl font-bold">{userStats.total}</p>
-            </div>
-          </CardBody>
-        </Card>
-        <Card className="border-none bg-gradient-to-br from-secondary/10 to-transparent shadow-sm">
-          <CardBody className="flex flex-row items-center gap-4 py-5">
-            <div className="bg-secondary/20 p-3 rounded-xl">
-              <FaShieldAlt className="text-secondary text-xl" />
-            </div>
-            <div>
-              <p className="text-tiny uppercase font-bold text-default-500">Admins</p>
-              <p className="text-2xl font-bold">{userStats.admins}</p>
-            </div>
-          </CardBody>
-        </Card>
-        <Card className="border-none bg-gradient-to-br from-success/10 to-transparent shadow-sm">
-          <CardBody className="flex flex-row items-center gap-4 py-5">
-            <div className="bg-success/20 p-3 rounded-xl">
-              <FaCheckCircle className="text-success text-xl" />
-            </div>
-            <div>
-              <p className="text-tiny uppercase font-bold text-default-500">Active</p>
-              <p className="text-2xl font-bold">{userStats.active}</p>
-            </div>
-          </CardBody>
-        </Card>
-      </div>
+    <div className="management-page">
+      <ManagementHeader title="Accounts" summary={<>
+        <span>{userStats.total} {userStats.total === 1 ? 'account' : 'accounts'}</span>
+        {users.some(user => user.isApproved === false) && <Chip size="sm" variant="flat" color="warning">{users.filter(user => user.isApproved === false).length} pending</Chip>}
+      </>} actions={<Button color="primary" startContent={<FaPlus />} onPress={() => handleOpenModal()}>New account</Button>} />
 
       {feedback && (
         <AlertBox
@@ -480,26 +521,27 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
       )}
 
       {/* Main Table Card */}
-      <Card className="shadow-sm border-none">
+      <Card className="management-panel">
         <CardHeader className="flex flex-col sm:flex-row gap-4 items-center justify-between px-6 py-4">
           <div className="relative w-full sm:w-72">
             <Input
               isClearable
-              placeholder="Search by username..."
+              aria-label="Search accounts"
+              placeholder="Search accounts"
               size="sm"
-              startContent={<FaSearch className="text-default-300" />}
+              startContent={<FaSearch className="text-default-500" />}
               value={searchTerm}
               onValueChange={setSearchTerm}
               variant="bordered"
               className="w-full"
             />
           </div>
-          <p className="text-default-400 text-small">Showing {filteredUsers.length} users</p>
+          <p className="text-default-500 text-small">{filteredUsers.length} results</p>
         </CardHeader>
         <Divider />
         <CardBody className="p-0">
-          <Table 
-            aria-label="User accounts table" 
+          <Table
+            aria-label="User accounts table"
             removeWrapper
             selectionMode="none"
             classNames={{
@@ -514,7 +556,7 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
               <TableColumn key="plugins">PLUGINS</TableColumn>
               <TableColumn key="actions" align="end">ACTIONS</TableColumn>
             </TableHeader>
-            <TableBody 
+            <TableBody
               emptyContent={"No users found matching your search."}
               items={filteredUsers}
             >
@@ -529,71 +571,27 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
       </Card>
 
       {/* Create/Edit User Modal */}
-      <Modal 
-        isOpen={isOpen} 
+      <Modal
+        isOpen={isOpen}
         onOpenChange={onOpenChange}
         placement="center"
         backdrop="blur"
-        size="lg"
-        classNames={{
-          base: "bg-background border-divider border-1",
-          header: "border-b-[1px] border-divider",
-          footer: "border-t-[1px] border-divider",
-        }}
+        size="md"
+        scrollBehavior="inside"
+        classNames={appModalClassNames}
       >
         <ModalContent>
           {(onClose) => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                {editingUser ? "Edit User Account" : "Create New User"}
-                <p className="text-tiny font-normal text-default-500">
-                  {editingUser 
-                    ? `Update settings for ${editingUser.username}` 
-                    : "Fill in the details to create a new system user."}
-                </p>
+                {editingUser ? "Edit account" : "New account"}
+
               </ModalHeader>
               <ModalBody className="py-6">
                 <div className="flex flex-col gap-6">
-                  {/* Photo Section */}
-                  <div className="flex flex-col items-center gap-4">
-                    <HeroUser
-                      name={formData.username || "User Preview"}
-                      description={formData.role}
-                      avatarProps={{
-                        src: selectedImage 
-                          ? URL.createObjectURL(selectedImage) 
-                          : (editingUser?.image 
-                            ? (editingUser.image.startsWith('http') ? editingUser.image : `https://dedicated-koala-14.convex.cloud/api/storage/get/${editingUser.image}`)
-                            : undefined),
-                        size: "lg",
-                        className: "w-24 h-24 text-large"
-                      }}
-                    />
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      className="hidden"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) setSelectedImage(file);
-                      }}
-                    />
-                    <Button 
-                      size="sm" 
-                      variant="flat" 
-                      onClick={() => fileInputRef.current?.click()}
-                      startContent={<FaPlus />}
-                    >
-                      {editingUser?.image || selectedImage ? "Change Photo" : "Upload Photo"}
-                    </Button>
-                  </div>
-
-                  <Divider />
-
                   <div className="flex flex-col gap-4">
                     <h3 className="text-sm font-semibold flex items-center gap-2">
-                       <FaUser className="text-primary" /> Basic Information
+                       <FaUser className="text-primary" /> Account details
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <Input
@@ -620,16 +618,16 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
 
                   <div className="flex flex-col gap-4">
                     <h3 className="text-sm font-semibold flex items-center gap-2">
-                       <FaShieldAlt className="text-secondary" /> Access Level
+                       <FaShieldAlt className="text-secondary" /> Role
                     </h3>
-                    <RadioGroup 
-                      label="Select User Role" 
+                    <RadioGroup
+                      label="Select User Role"
                       orientation="horizontal"
                       value={formData.role}
                       onValueChange={(val) => setFormData(p => ({ ...p, role: val }))}
                     >
-                      <Radio 
-                        value="user" 
+                      <Radio
+                        value="user"
                         description="Access to basic dashboard features"
                         classNames={{
                           base: "inline-flex m-0 bg-content2 hover:bg-content3 items-center justify-between flex-row-reverse max-w-full cursor-pointer rounded-lg gap-4 p-4 border-2 border-transparent data-[selected=true]:border-primary",
@@ -637,8 +635,8 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
                       >
                         Standard User
                       </Radio>
-                      <Radio 
-                        value="admin" 
+                      <Radio
+                        value="admin"
                         description="Full administrative access"
                         classNames={{
                           base: "inline-flex m-0 bg-content2 hover:bg-content3 items-center justify-between flex-row-reverse max-w-full cursor-pointer rounded-lg gap-4 p-4 border-2 border-transparent data-[selected=true]:border-primary",
@@ -646,8 +644,8 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
                       >
                         Administrator
                       </Radio>
-                      <Radio 
-                        value="dev" 
+                      <Radio
+                        value="dev"
                         description="Developer access & tools"
                         classNames={{
                           base: "inline-flex m-0 bg-content2 hover:bg-content3 items-center justify-between flex-row-reverse max-w-full cursor-pointer rounded-lg gap-4 p-4 border-2 border-transparent data-[selected=true]:border-primary",
@@ -662,10 +660,10 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
 
                   <div className="flex flex-col gap-4">
                     <h3 className="text-sm font-semibold flex items-center gap-2">
-                       <FaPlug className="text-success" /> Plugin Permissions
+                       <FaPlug className="text-success" /> Plugin access
                     </h3>
                     <CheckboxGroup
-                      label="Assigned Plugins"
+                      label="Plugins"
                       orientation="horizontal"
                       value={formData.plugins}
                       onValueChange={(val) => setFormData(p => ({ ...p, plugins: val as string[] }))}
@@ -673,8 +671,8 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
                     >
                       <div className="flex flex-wrap gap-2">
                         {(allPlugins as PluginItem[] | undefined)?.map((plugin) => (
-                          <Checkbox 
-                            key={plugin.name} 
+                          <Checkbox
+                            key={plugin.name}
                             value={plugin.name}
                             classNames={{
                               base: "inline-flex bg-content2 hover:bg-content3 items-center justify-start cursor-pointer rounded-lg gap-2 p-2 px-3 border-2 border-transparent data-[selected=true]:border-success",
@@ -687,7 +685,7 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
                       </div>
                     </CheckboxGroup>
                     {!(allPlugins as any)?.length && (
-                      <p className="text-tiny text-default-400 italic">No plugins available in the system.</p>
+                      <p className="text-tiny text-default-500 italic">No plugins available in the system.</p>
                     )}
                   </div>
                 </div>
@@ -696,9 +694,9 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
                 <Button variant="light" onPress={onClose}>
                   Cancel
                 </Button>
-                <Button 
-                  color="primary" 
-                  onPress={handleSubmitUser} 
+                <Button
+                  color="primary"
+                  onPress={handleSubmitUser}
                   isLoading={isSubmitting}
                 >
                   {editingUser ? "Save Changes" : "Create Account"}
@@ -708,6 +706,121 @@ export const AdminAccountManagementPage: React.FC<PageProps> = ({ username }) =>
           )}
         </ModalContent>
       </Modal>
+
+      {/* Change Photo Modal */}
+      <Modal
+        isOpen={isPhotoOpen}
+        onOpenChange={onPhotoOpenChange}
+        placement="center"
+        backdrop="blur"
+        size="sm"
+        classNames={appModalClassNames}
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                Edit Profile Picture
+                <p className="text-tiny font-normal text-default-500">
+                  {photoTarget?.username ? `Update photo for ${photoTarget.username}` : ''}
+                </p>
+              </ModalHeader>
+              <ModalBody className="py-6">
+                <div className="flex flex-col items-center gap-5">
+                  <div className="relative group">
+                    <HeroUser
+                      name={photoTarget?.username || ''}
+                      avatarProps={{
+                        src: selectedImage
+                          ? URL.createObjectURL(selectedImage)
+                          : ((photoTarget as any)?.imageUrl || undefined),
+                        size: "lg",
+                        className: "w-24 h-24 text-large cursor-pointer transition-opacity group-hover:opacity-70",
+                        onClick: () => fileInputRef.current?.click(),
+                      }}
+                    />
+                  </div>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) setSelectedImage(file);
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    onClick={() => fileInputRef.current?.click()}
+                    startContent={<FaPlus />}
+                  >
+                    {selectedImage || photoTarget?.image ? 'Change Photo' : 'Upload Photo'}
+                  </Button>
+                  {selectedImage && (
+                    <p className="text-tiny text-default-500 text-center">{selectedImage.name}</p>
+                  )}
+                </div>
+              </ModalBody>
+              <ModalFooter>
+                <Button variant="light" onPress={() => { setSelectedImage(null); onPhotoClose(); }}>
+                  Cancel
+                </Button>
+                <Button
+                  color="primary"
+                  isLoading={isPhotoSubmitting}
+                  onPress={async () => {
+                    if (!selectedImage || !photoTarget) return;
+                    setIsPhotoSubmitting(true);
+                    try {
+                      const postUrl = await generateUploadUrl();
+                      const result = await fetch(postUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': selectedImage.type },
+                        body: selectedImage,
+                      });
+                      const { storageId } = await result.json();
+                      const previousUserData = parseUserData(photoTarget.usrData);
+                      await updateUserAction({
+                        userId: photoTarget._id,
+                        image: storageId,
+                        usrData: JSON.stringify({
+                          role: previousUserData.role,
+                          createdAt: previousUserData.createdAt,
+                          isActive: previousUserData.isActive,
+                          plugins: previousUserData.plugins,
+                        }),
+                      });
+                      setFeedback({ type: 'success', message: `Photo updated for ${photoTarget.username}.` });
+                      refreshUserData();
+                      if (photoTarget.username === currentUsername) {
+                        refreshCurrentUserData();
+                      }
+                      setSelectedImage(null);
+                      onPhotoClose();
+                    } catch (err) {
+                      console.error(err);
+                      setFeedback({ type: 'error', message: 'Failed to update photo.' });
+                    } finally {
+                      setIsPhotoSubmitting(false);
+                    }
+                  }}
+                >
+                  Save Photo
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      <AppConfirmDialog
+        isOpen={Boolean(confirmState)}
+        onClose={() => setConfirmState(null)}
+        message={confirmState?.message || ''}
+        onConfirm={() => confirmState?.onConfirm()}
+      />
     </div>
   );
 };

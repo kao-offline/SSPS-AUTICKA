@@ -7,35 +7,38 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
-    "create-admin": "node create-admin.js",
-    "setup-auth": "node setup-admin.js",
-    "migrate-users": "node run-migration.js",
-    "security-docs": "echo Reading SECURITY.md... && cat SECURITY.md || type SECURITY.md"
+    "create-admin": "node tools/reset-admin.mjs",
+    "setup-auth": "node tools/reset-admin.mjs",
+    "security-docs": "node -e \"console.log(require('fs').readFileSync('docs/SECURITY.md','utf8'))\"",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "validate": "npm run test && npm run typecheck && npm run lint && npm run build"
   },
   "dependencies": {
-    "@auth/core": "^0.37.0",
-    "@convex-dev/auth": "^0.0.90",
+    "@auth/core": "^0.41.3",
+    "@convex-dev/auth": "^0.0.95",
     "@heroui/react": "^2.8.9",
-    "@supabase/supabase-js": "^2.58.0",
-    "@types/bcryptjs": "^2.4.6",
     "bcryptjs": "^3.0.2",
     "convex": "^1.27.3",
     "framer-motion": "^12.34.5",
     "jose": "^6.1.3",
+    "lucia": "^3.2.2",
+    "lucide-react": "^0.577.0",
     "next": "^16.0.7",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "react-icons": "^5.5.0"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^22.20.4",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "convex-test": "^0.0.60",
     "eslint": "^9",
     "eslint-config-next": "^16.0.7",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^5.0.2"
   }
 }

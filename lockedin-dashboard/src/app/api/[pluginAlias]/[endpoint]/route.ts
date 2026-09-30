@@ -1,42 +1,41 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { apiErrorStatus, apiErrorMessage } from '@/lib/api-errors';
+import { getConvexUrl } from '@/lib/convex-url';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../../convex/_generated/api';
 
-/**
- * Dynamic Plugin API Endpoint Handler
- * 
- * Handles requests to /api/[pluginAlias]/[endpoint]
- * Routes requests to plugin-specific handlers
- */
-
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+const convex = new ConvexHttpClient(getConvexUrl());
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { pluginAlias: string; endpoint: string } }
+  { params }: { params: Promise<{ pluginAlias: string; endpoint: string }> | { pluginAlias: string; endpoint: string } }
 ) {
-  return handlePluginApiRequest(request, params, 'GET');
+  const resolvedParams = await params;
+  return handlePluginApiRequest(request, resolvedParams, 'GET');
 }
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { pluginAlias: string; endpoint: string } }
+  { params }: { params: Promise<{ pluginAlias: string; endpoint: string }> | { pluginAlias: string; endpoint: string } }
 ) {
-  return handlePluginApiRequest(request, params, 'POST');
+  const resolvedParams = await params;
+  return handlePluginApiRequest(request, resolvedParams, 'POST');
 }
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { pluginAlias: string; endpoint: string } }
+  { params }: { params: Promise<{ pluginAlias: string; endpoint: string }> | { pluginAlias: string; endpoint: string } }
 ) {
-  return handlePluginApiRequest(request, params, 'PUT');
+  const resolvedParams = await params;
+  return handlePluginApiRequest(request, resolvedParams, 'PUT');
 }
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { pluginAlias: string; endpoint: string } }
+  { params }: { params: Promise<{ pluginAlias: string; endpoint: string }> | { pluginAlias: string; endpoint: string } }
 ) {
-  return handlePluginApiRequest(request, params, 'DELETE');
+  const resolvedParams = await params;
+  return handlePluginApiRequest(request, resolvedParams, 'DELETE');
 }
 
 async function handlePluginApiRequest(
@@ -46,70 +45,28 @@ async function handlePluginApiRequest(
 ) {
   try {
     const { pluginAlias, endpoint } = params;
-
-    // Validate API key if required
     const apiKey = request.headers.get('x-api-key');
+
     if (!apiKey) {
-      return NextResponse.json(
-        { error: 'API key is required' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'API key is required' }, { status: 401 });
     }
 
-    // Verify API key with Convex
-    const apiKeyValid = await convex.query(api.publicApi.validateApiKey, {
-      key: apiKey,
-    });
-
-    if (!apiKeyValid) {
-      return NextResponse.json(
-        { error: 'Invalid API key' },
-        { status: 403 }
-      );
-    }
-
-    // Get plugin information
-    const plugin = await convex.query(api.pluginFramework.getPluginByEndpoint, {
-      pluginAlias,
-    });
-
-    if (!plugin) {
-      return NextResponse.json(
-        { error: `Plugin ${pluginAlias} not found` },
-        { status: 404 }
-      );
-    }
-
-    if (!plugin.isActive) {
-      return NextResponse.json(
-        { error: `Plugin ${pluginAlias} is not active` },
-        { status: 403 }
-      );
-    }
-
-    // Check if plugin has registered this endpoint
-    const hasEndpoint = plugin.apiEndpoints?.includes(endpoint);
-    if (!hasEndpoint) {
-      return NextResponse.json(
-        { error: `Endpoint ${endpoint} not found for plugin ${pluginAlias}` },
-        { status: 404 }
-      );
-    }
-
-    // Parse request body for POST/PUT
     let body = null;
     if (method === 'POST' || method === 'PUT') {
       try {
         body = await request.json();
       } catch {
-        body = {};
+        return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
       }
     }
 
-    // Parse query parameters
+    // Fast-path for high-frequency server module traffic (single Convex call with auth inside).
+    if (pluginAlias === 'parking-spaces') {
+      return await handleParkingSpacesApi(endpoint, method, body, pluginAlias, apiKey);
+    }
+
     const searchParams = Object.fromEntries(request.nextUrl.searchParams);
 
-    // Call plugin-specific API handler
     const result = await convex.mutation(api.pluginApi.handlePluginApiCall, {
       pluginAlias,
       endpoint,
@@ -123,8 +80,62 @@ async function handlePluginApiRequest(
   } catch (error) {
     console.error('Plugin API error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
-      { status: 500 }
+      { error: apiErrorMessage(error) },
+      { status: apiErrorStatus(error) }
     );
   }
+}
+
+async function handleParkingSpacesApi(
+  endpoint: string,
+  method: string,
+  body: any,
+  pluginAlias: string,
+  apiKey: string
+) {
+  if (endpoint === 'getSpaces' && method === 'GET') {
+    const result = await convex.query(api.pluginApi.getParkingSpacesSnapshotAuthed, {
+      pluginName: pluginAlias,
+      apiKey,
+    });
+
+    return NextResponse.json(result);
+  }
+
+  if (endpoint === 'getMap' && method === 'GET') {
+    const result = await convex.query(api.pluginApi.getParkingMapSnapshotAuthed, {
+      pluginName: pluginAlias,
+      apiKey,
+    });
+
+    return NextResponse.json(result);
+  }
+
+  if (endpoint === 'updateSpaceStatus' && (method === 'POST' || method === 'PUT')) {
+    const hasBool = typeof body?.isFull === 'boolean';
+    const hasStatus = body?.status === 'full' || body?.status === 'empty';
+    if ((!body?.spaceId && !body?.spaceName) || (!hasBool && !hasStatus)) {
+      return NextResponse.json(
+        { error: 'spaceId or spaceName and status/isFull are required' },
+        { status: 400 }
+      );
+    }
+
+    const result = await convex.mutation(api.pluginApi.updateParkingSpaceStatusAuthed, {
+      pluginName: pluginAlias,
+      apiKey,
+      spaceId: body?.spaceId,
+      spaceName: body?.spaceName,
+      status: hasStatus ? body.status : undefined,
+      isFull: hasBool ? body.isFull : undefined,
+    });
+
+
+    return NextResponse.json(result);
+  }
+
+  return NextResponse.json(
+    { error: `Method ${method} is not supported for ${pluginAlias}/${endpoint}` },
+    { status: 405 }
+  );
 }

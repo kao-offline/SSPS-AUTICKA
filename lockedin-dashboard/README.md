@@ -1,200 +1,55 @@
-# 🔐 LockedIN Dashboard - SSPS Security System
+﻿# LockedIN dashboard
 
-A secure Next.js dashboard for monitoring and managing the SSPS parking and security system, powered by Convex with enterprise-grade authentication.
+Next.js, React, and Convex dashboard for the SSPS parking system.
 
-## 🚨 Security Notice
+Production: https://li.kaooffline.top/login. Cloudflare forwards this hostname to the existing Vercel application. Production Convex is `combative-cat-787`; local development uses the deployment configured in `.env.local`.
 
-**This dashboard is now fully secured with Convex Auth!**
+## Development
 
-All API endpoints require authentication. No anonymous access is allowed.
+Use npm (`package-lock.json` is authoritative):
 
-## 🚀 Quick Start
-
-### 1. Install Dependencies
-```bash
-npm install
-```
-
-### 2. Set Up Environment Variables
-Create a `.env.local` file:
-```env
-NEXT_PUBLIC_CONVEX_URL=your_convex_url_here
-```
-
-### 3. Set Up Authentication
-```bash
-npm run setup-auth
-```
-Follow the on-screen instructions to create your first admin user.
-
-### 4. Start Development Server
-```bash
+```sh
+npm ci
+npx convex dev
 npm run dev
 ```
 
-### 5. Login
-Open [http://localhost:3000/login](http://localhost:3000/login) and login with your credentials.
+Set `NEXT_PUBLIC_CONVEX_URL` and `CONVEX_DEPLOYMENT` in `.env.local`. Convex Auth requires deployment-side `JWT_PRIVATE_KEY`, `JWKS`, and `SITE_URL`. Never commit these values. New registrations require approval. The first registration becomes an admin only on an empty installation.
 
-## 📚 Documentation
+## Admin recovery
 
-- **[SECURITY.md](./SECURITY.md)** - Complete security documentation and API reference
-- **[INTEGRATION_SUMMARY.md](./INTEGRATION_SUMMARY.md)** - Quick overview of security integration
-- **[CONVEX_AUTH_MIGRATION.md](./CONVEX_AUTH_MIGRATION.md)** - Detailed migration guide
+Run from this directory, using a logged-in Convex CLI and an explicitly chosen deployment:
 
-## 🔑 Authentication
-
-This dashboard uses **Convex Auth** for authentication with **username + password** login:
-
-- ✅ Username + password authentication (NO email required)
-- ✅ JWT-based sessions
-- ✅ Automatic session management
-- ✅ CSRF protection
-- ✅ Type-safe authentication
-
-### First Time Setup
-
-**Migrate existing users:**
-```bash
-npm run migrate-users
+```sh
+npm run create-admin -- <deployment-name> admin
 ```
 
-Then follow the instructions to run the migration in Convex Dashboard.
+This resets or creates an approved admin. The random password is saved to the ignored `.env.admin-login` file and never printed. This is a local credential file, not frontend configuration.
 
-### Login Flow
-1. Navigate to `/login`
-2. Enter your **username** and password
-3. System validates credentials via Convex Auth
-4. JWT token is issued and stored
-5. Redirected to `/dashboard`
+To derive missing public JWKS from the existing private signing key:
 
-## 🛡️ Security Features
-
-### Protected Endpoints
-All API operations are secured:
-
-```typescript
-// ✅ Secured APIs (Use these!)
-api.securedApi.*         // User & plugin management
-api.securedSpaces.*      // Car tracking operations
-
-// ❌ Legacy APIs (Don't use - insecure!)
-api.context.*            // Old unsecured functions
-api.spaces.*             // Old unsecured tracking
+```sh
+node tools/repair-auth-keys.mjs <deployment-name>
 ```
 
-### Authentication Checks
-Every secured function validates authentication:
+## Validation
 
-```typescript
-const userId = await getAuthUserId(ctx);
-if (userId === null) {
-  throw new Error("Unauthorized");
-}
+```sh
+npm run test
+npm run typecheck
+npm run lint
+npm run build
+npm audit
 ```
 
-## 📋 Available Scripts
+`npm run validate` stops on the first failed check. The audit report records outstanding lint failures.
 
-```bash
-npm run dev          # Start development server
-npm run build        # Build for production
-npm run start        # Start production server
-npm run setup-auth   # Set up first admin user
-npm run lint         # Run linter
-```
+For live checks, load the local admin credential file and the intended `NEXT_PUBLIC_CONVEX_URL` into the process environment, then run `node tools/smoke-deployed.mjs https://li.kaooffline.top`. This creates and removes a temporary restricted API key.
 
-## 🏗️ Architecture
+## Deployment
 
-### Frontend
-- **Next.js 16** - React framework
-- **Convex Auth Provider** - Authentication wrapper
-- **TypeScript** - Type safety
+Vercel's project root is `lockedin-dashboard`. Run `npx vercel deploy .. --prod --yes` from this directory. Deploy Convex separately: `npx convex deploy --env-file <production-env-file> --yes`.
 
-### Backend
-- **Convex** - Backend-as-a-Service
-- **Convex Auth** - Authentication system
-- **JWT Tokens** - Secure session management
+The hostname route is configured in `../deploy/cloudflare/wrangler.jsonc`. Deploy with `npx wrangler deploy --config ../deploy/cloudflare/wrangler.jsonc`. It uses existing wildcard DNS and worker permissions; DNS-edit access is unnecessary. Keep the Vercel origin alias available.
 
-### Database Tables
-- `users` - Convex Auth users
-- `authSessions` - Active sessions
-- `usrs` - Legacy user data
-- `plugins` - Plugin management
-- `spaces` - Parking spaces
-- `current_cars` - Cars in area
-- `car_history` - Entry/exit history
-
-## 🔧 Tech Stack
-
-- [Next.js](https://nextjs.org) - React framework
-- [Convex](https://convex.dev) - Backend & Database
-- [Convex Auth](https://labs.convex.dev/auth) - Authentication
-- [TypeScript](https://www.typescriptlang.org) - Type safety
-- [React 19](https://react.dev) - UI library
-
-## 📖 Learn More
-
-### Project Documentation
-- [Security Documentation](./SECURITY.md)
-- [Migration Guide](./CONVEX_AUTH_MIGRATION.md)
-- [Integration Summary](./INTEGRATION_SUMMARY.md)
-
-### External Resources
-- [Convex Documentation](https://docs.convex.dev)
-- [Convex Auth Docs](https://labs.convex.dev/auth)
-- [Next.js Documentation](https://nextjs.org/docs)
-
-## 🚀 Deployment
-
-### Convex Deployment
-```bash
-npx convex deploy
-```
-
-### Vercel Deployment
-The easiest way to deploy is using [Vercel](https://vercel.com):
-
-```bash
-vercel deploy
-```
-
-Make sure to add your environment variables in Vercel settings:
-- `NEXT_PUBLIC_CONVEX_URL`
-
-## 🐛 Troubleshooting
-
-### "Unauthorized" Errors
-- Ensure you're logged in
-- Check JWT token in browser Network tab
-- Verify `ConvexAuthProvider` wraps your app
-
-### Login Issues
-- Verify email/password are correct
-- Check browser console for errors
-- Ensure user exists in database
-
-### Can't Access Dashboard
-- Make sure you're logged in at `/login`
-- Check that session hasn't expired
-- Try clearing cookies and logging in again
-
-## 📞 Support
-
-For issues or questions:
-1. Check the documentation files
-2. Review Convex Auth documentation
-3. Check browser console for errors
-4. Inspect Network tab for failed requests
-
-## 🎉 Features
-
-- 🔐 **Secure Authentication** - JWT-based login
-- 👥 **User Management** - Admin panel for users
-- 🔌 **Plugin System** - Extensible architecture
-- 🚗 **Car Tracking** - Entry/exit monitoring
-- 🅿️ **Space Management** - Parking space status
-- 📊 **History Tracking** - Complete audit trail
-- 🎨 **Modern UI** - Clean, responsive design
-
----
-
-**Built with ❤️ for SSPS** | Secured with Convex Auth
+See [security notes](docs/SECURITY.md) and [the audit report](docs/AUDIT-2026-09-30.md).

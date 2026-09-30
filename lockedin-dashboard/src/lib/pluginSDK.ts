@@ -23,6 +23,7 @@ interface PluginRedirectPayload {
 
 const PLUGIN_REDIRECT_EVENT = 'plugin:redirect';
 const PLUGIN_REDIRECT_STORE_KEY = '__pluginRedirectPayloads';
+const PLUGIN_STREAM_FRAME_CACHE_KEY = '__pluginStreamFrameCache';
 
 export class PluginSDK {
   private context: PluginContext;
@@ -179,6 +180,63 @@ export class PluginSDK {
   }
 
   /**
+   * Get a public URL for a plugin asset (from assets/ folder)
+   */
+  async getAssetUrl(assetName: string): Promise<string | null> {
+    const { pluginName, convexClient } = this.context;
+
+    const tryGetViaFrameworkAssetQuery = async (name: string): Promise<string | null> => {
+      return await convexClient.query('pluginFramework:getPluginAssetUrl', {
+        pluginName,
+        assetName: name,
+      });
+    };
+
+    const tryGetViaContextAssetQuery = async (name: string): Promise<string | null> => {
+      return await convexClient.query('context:getPluginAssetUrl', {
+        pluginName,
+        assetName: name,
+      });
+    };
+
+    const tryGetViaFileQuery = async (name: string): Promise<string | null> => {
+      const file = await convexClient.query('pluginFramework:getPluginFileUrl', {
+        pluginName,
+        fileName: name,
+      });
+      return file?.url ?? null;
+    };
+
+    // Support both legacy and current backends, and both stored name formats.
+    const candidateNames = [assetName, `assets/${assetName}`];
+
+    for (const candidate of candidateNames) {
+      try {
+        const fileUrl = await tryGetViaFileQuery(candidate);
+        if (fileUrl) return fileUrl;
+      } catch {
+        // Ignore and try compatibility fallbacks.
+      }
+
+      try {
+        const contextUrl = await tryGetViaContextAssetQuery(candidate);
+        if (contextUrl) return contextUrl;
+      } catch {
+        // Ignore and continue fallback chain.
+      }
+
+      try {
+        const frameworkUrl = await tryGetViaFrameworkAssetQuery(candidate);
+        if (frameworkUrl) return frameworkUrl;
+      } catch {
+        // Keep searching other candidates.
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Get all files for this plugin
    */
   async getAllFiles(): Promise<any[]> {
@@ -303,7 +361,10 @@ export class PluginSDK {
       return 'light';
     }
 
-    // Check if dark mode class is on html element
+    const selectedTheme = document.documentElement.dataset.theme;
+    if (selectedTheme === 'light' || selectedTheme === 'dark') return selectedTheme;
+
+    // Compatibility with hosts that use only a theme class.
     if (document.documentElement.classList.contains('dark')) {
       return 'dark';
     }
@@ -332,7 +393,7 @@ export class PluginSDK {
     // Watch for class changes on html element
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ['class'],
+      attributeFilter: ['class', 'data-theme'],
     });
 
     // Watch for system preference changes
@@ -600,6 +661,91 @@ export class PluginSDK {
     }
 
     return payload;
+  }
+
+  // ============================================================================
+  // STREAMING & PROXY API
+  // ============================================================================
+
+  private getStreamFrameCache(): Record<string, string> {
+    const win = window as unknown as Record<string, any>;
+    if (!win[PLUGIN_STREAM_FRAME_CACHE_KEY]) {
+      win[PLUGIN_STREAM_FRAME_CACHE_KEY] = {};
+    }
+
+    return win[PLUGIN_STREAM_FRAME_CACHE_KEY] as Record<string, string>;
+  }
+
+  private normalizeFrameData(frameData: string): string {
+    const normalized = frameData.trim();
+
+    if (
+      normalized.startsWith('data:') ||
+      normalized.startsWith('http://') ||
+      normalized.startsWith('https://') ||
+      normalized.startsWith('blob:')
+    ) {
+      return normalized;
+    }
+
+    if (normalized.startsWith('<svg')) {
+      return `data:image/svg+xml;utf8,${encodeURIComponent(normalized)}`;
+    }
+
+    if (/^[A-Za-z0-9+/=\r\n]+$/.test(normalized)) {
+      const compact = normalized.replace(/\s+/g, '');
+      if (compact.startsWith('/9j/')) {
+        return `data:image/jpeg;base64,${compact}`;
+      }
+      if (compact.startsWith('iVBOR')) {
+        return `data:image/png;base64,${compact}`;
+      }
+      if (compact.startsWith('R0lGOD')) {
+        return `data:image/gif;base64,${compact}`;
+      }
+      if (compact.startsWith('UklGR')) {
+        return `data:image/webp;base64,${compact}`;
+      }
+    }
+
+    return normalized;
+  }
+
+  /**
+   * Listen for frames from a specific stream (e.g., proxied RTSP)
+   */
+  onStreamFrame(streamId: string, callback: (frame: string) => void): () => void {
+    const eventName = `stream:frame:${streamId}`;
+    const frameCache = this.getStreamFrameCache();
+    const handler = (e: any) => {
+      if (e.detail && typeof e.detail === 'string') {
+        callback(e.detail);
+      }
+    };
+
+    window.addEventListener(eventName, handler);
+    const cachedFrame = frameCache[streamId];
+    if (typeof cachedFrame === 'string' && cachedFrame.length > 0) {
+      setTimeout(() => {
+        callback(cachedFrame);
+      }, 0);
+    }
+    this.log(`Started listening for frames on stream: ${streamId}`);
+
+    return () => {
+      window.removeEventListener(eventName, handler);
+      this.log(`Stopped listening for frames on stream: ${streamId}`);
+    };
+  }
+
+  /**
+   * Emit a frame for a specific stream (can be called by a proxy handler)
+   */
+  emitStreamFrame(streamId: string, frameData: string): void {
+    const eventName = `stream:frame:${streamId}`;
+    const normalizedFrame = this.normalizeFrameData(frameData);
+    this.getStreamFrameCache()[streamId] = normalizedFrame;
+    window.dispatchEvent(new CustomEvent(eventName, { detail: normalizedFrame }));
   }
 
   // ============================================================================

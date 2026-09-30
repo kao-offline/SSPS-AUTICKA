@@ -6,7 +6,7 @@
 /* ---- Dashboard Container ---------------------------------- */
 .dashboardContainer {
   display: flex;
-  height: 100vh;
+  height: 100dvh;
   width: 100vw;
   background-color: var(--bg-app);
   font-family: 'SF Pro', -apple-system, system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -18,60 +18,10 @@
   transition: background-color 0.3s ease;
 }
 
-/* Sidebar ambient glows (Dark mode only) */
-.dashboardContainer:not(:global(.light-mode))::before {
-  content: '';
-  position: absolute;
-  width: 700px;
-  height: 700px;
-  left: -15%;
-  bottom: -20%;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle at 30% 30%,
-    #5c95ff59 0%,
-  );
-  filter: blur(60px);
-  pointer-events: none;
-  z-index: 0;
-  animation: ambientFloat1 22s ease-in-out infinite;
-}
-
-.dashboardContainer:not(:global(.light-mode))::after {
-  content: '';
-  position: absolute;
-  width: 500px;
-  height: 500px;
-  right: -8%;
-  top: -15%;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle at 70% 20%,
-    rgba(255, 255, 255, 0.1) 0%,
-    rgba(220, 242, 255, 0.06) 30%,
-    rgba(140, 190, 255, 0.04) 60%,
-    transparent 70%
-  );
-  mix-blend-mode: screen;
-  filter: blur(50px);
-  pointer-events: none;
-  z-index: 0;
-  animation: ambientFloat2 28s ease-in-out infinite;
-}
-
-@keyframes ambientFloat1 {
-  0%, 100% { transform: translateY(0) translateX(0); }
-  50%       { transform: translateY(-25px) translateX(18px); }
-}
-@keyframes ambientFloat2 {
-  0%, 100% { transform: translateY(0) translateX(0); }
-  50%       { transform: translateY(18px) translateX(-22px); }
-}
-
-/* ---- Sidebar ---------------------------------------------- */
+/* ---- Sidebar (compact) ------------------------------------ */
 .sidebar {
-  width: 300px;          /* Increased width (1.5x) */
-  min-width: 300px;
+  width: 232px;
+  min-width: 232px;
   background-color: var(--bg-sidebar);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
@@ -87,44 +37,27 @@
   overflow: hidden;
 }
 
-/* ---- Logo ------------------------------------------------- */
+/* Brand */
 .logoContainer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
   display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  box-sizing: border-box;
-  overflow: visible;
-  z-index: 1;
-  pointer-events: none;
+  align-items: center;
+  padding: 30px 22px 26px;
+  flex-shrink: 0;
 }
-
-.logo {
-  display: block;
-  overflow: visible;
-  text-decoration: none;
-}
-
+.logo { display: block; width: 100%; }
 .logoImage {
-  width: 340px !important;
-  height: 220px !important;
-  object-fit: none;
-  object-position: -220px -220px;
   display: block;
-  pointer-events: none;
-  transition: opacity 0.3s ease;
-  filter: none;
-  opacity: 0.95;
+  width: 100%;
+  height: auto;
+  max-width: 221px;
+  object-fit: contain;
+  filter: var(--logo-glow);
 }
 
 /* ---- Navigation Area -------------------------------------- */
 .navigation {
   flex: 1;
-  padding: 110px 12px 12px 12px;           /* Top padding for logo space */
+  padding: 4px 12px 12px;           /* Top padding for logo space */
   overflow-y: auto;
   overflow-x: hidden;
   display: flex;
@@ -147,19 +80,19 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  height: 48px;              /* Slightly taller for more presence */
-  padding: 0 16px;
+  height: 38px;
+  padding: 0 12px;
   box-sizing: border-box;
 
   background-color: transparent;
   border: none;
-  border-radius: 12px;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   font-family: 'SF Pro', -apple-system, sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-muted);
   text-align: left;
   white-space: nowrap;
@@ -181,13 +114,13 @@
 }
 
 .navIcon {
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 15px;
   flex-shrink: 0;
   overflow: hidden;
   position: relative;
@@ -247,12 +180,12 @@
 :global(.light-mode) .navItem:hover .navIcon .iconOutline,
 :global(.light-mode) .navItem.active .navIcon .iconFull,
 :global(.light-mode) .navItem:hover .navIcon .iconFull {
-  filter: brightness(0) saturate(100%) invert(100%);
+  filter: brightness(0) saturate(100%) invert(24%) sepia(83%) saturate(2841%) hue-rotate(207deg) brightness(93%) contrast(96%);
 }
 
 .navLabel {
   flex: 1;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -280,19 +213,19 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  height: 40px;
-  padding: 0 16px;
+  height: 34px;
+  padding: 0 12px;
   box-sizing: border-box;
 
   background-color: var(--accent-blue-dim);
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.18s ease;
   font-family: 'SF Pro', sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--accent-blue);
   text-align: left;
   white-space: nowrap;
@@ -303,19 +236,19 @@
 
 .managementButton:hover {
   background-color: var(--accent-blue);
-  color: #ffffff;
+  color: var(--accent-foreground);
 }
 
 .managementButton.active {
   background-color: var(--accent-blue);
-  color: #ffffff;
+  color: var(--accent-foreground);
   box-shadow: 0 4px 12px rgba(92, 149, 255, 0.2);
 }
 
 .managementIcon {
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -383,7 +316,7 @@
 
 .managementLabel {
   flex: 1;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -393,7 +326,7 @@
 
 .adminLabel {
   flex: 1;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -405,10 +338,10 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  height: 40px;
-  padding: 0 16px;
+  height: 34px;
+  padding: 0 12px;
   box-sizing: border-box;
 
   background-color: var(--accent-blue-dim);
@@ -428,7 +361,7 @@
 
 .adminButton:hover {
   background-color: var(--accent-blue);
-  color: #ffffff;
+  color: var(--accent-foreground);
 }
 
 .logoutIcon {
@@ -519,7 +452,7 @@
 }
 
 :global(.light-mode) .profileCard:hover .profileIcon img {
-  filter: brightness(0) saturate(100%) invert(100%);
+  filter: brightness(0) saturate(100%) invert(24%) sepia(83%) saturate(2841%) hue-rotate(207deg) brightness(93%) contrast(96%);
 }
 
 .profileInfo {
@@ -606,7 +539,7 @@
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--border-card);
-  border-left: none;
+  border-left: 1px solid var(--border-card);
   border-radius: 16px;           /* Large soft radius */
   overflow-y: auto;
   box-sizing: border-box;
@@ -642,8 +575,8 @@
 /* ---- Responsive ------------------------------------------- */
 @media (max-width: 1024px) {
   .sidebar {
-    width: 260px;
-    min-width: 260px;
+    width: 210px;
+    min-width: 210px;
   }
 }
 
@@ -660,4 +593,37 @@
   .mainContent {
     padding: 12px;
   }
+}
+.navItem:focus-visible, .managementButton:focus-visible, .adminButton:focus-visible,
+.profileCard:focus-visible, .logoutAction:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+.managementButton.active .managementIcon img,
+.managementButton:hover .managementIcon img { filter: brightness(0) saturate(100%) invert(8%); }
+:global(.light-mode) .managementButton.active .managementIcon img,
+:global(.light-mode) .managementButton:hover .managementIcon img { filter: brightness(0) invert(1); }
+.profileIcon img[src^='/api'], .profileIcon img[src^='https:'] { filter: none; }
+
+@media (max-width: 768px) {
+  .sidebar { max-height: 45dvh; overflow-y: auto; }
+  .logoContainer { padding: 18px 20px 12px; }
+  .logoImage { width: 160px; }
+  .navigation { flex: none; padding: 6px 12px; }
+  .navMenu { flex-direction: row; overflow-x: auto; }
+  .navMenu > div { width: auto; flex-shrink: 0; }
+  .navItem { width: auto; }
+  .adminSection { margin-top: 0; padding: 8px 12px 12px; flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .managementButtons { width: 100%; flex-direction: row; gap: 4px; }
+  .managementButtons > div { flex: 1; min-width: 0; }
+  .managementButton { justify-content: center; padding: 0 6px; gap: 5px; }
+  .managementIcon { width: 20px; min-width: 20px; }
+  .managementLabel { flex: none; font-size: 12px; }
+  .adminSection > div:not(.managementButtons) { width: auto; }
+  .adminSection > div:empty { display: none; }
+  .profileCard { flex: 1; }
+  .mainContent { min-height: 0; padding: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dashboardContainer, .sidebar, .navItem, .managementButton, .contentContainer { transition: none; }
 }

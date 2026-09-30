@@ -1,3 +1,4 @@
+import { checkAuthenticated } from "./permissions";
 /**
  * Secured Spaces API
  * All mutations and queries require authentication
@@ -17,6 +18,7 @@ export const update_fullness = mutation({
         isFull: v.boolean(),
     },
     handler: async (ctx, args) => {
+        await checkAuthenticated(ctx);
         // Require authentication
         const userId = await getAuthUserId(ctx);
         if (userId === null) {
@@ -55,6 +57,7 @@ export const car_entered = mutation({
         licensePlate: v.string(),
     },
     handler: async (ctx, args) => {
+        await checkAuthenticated(ctx);
         // Require authentication
         const userId = await getAuthUserId(ctx);
         if (userId === null) {
@@ -92,6 +95,7 @@ export const car_exited = mutation({
         licensePlate: v.string(),
     },
     handler: async (ctx, args) => {
+        await checkAuthenticated(ctx);
         // Require authentication
         const userId = await getAuthUserId(ctx);
         if (userId === null) {
@@ -130,6 +134,7 @@ export const car_exited = mutation({
 export const get_current_cars = query({
     args: {},
     handler: async (ctx) => {
+        await checkAuthenticated(ctx);
         // Require authentication
         const userId = await getAuthUserId(ctx);
         if (userId === null) {
@@ -146,6 +151,7 @@ export const is_car_present = query({
         licensePlate: v.string(),
     },
     handler: async (ctx, args) => {
+        await checkAuthenticated(ctx);
         // Require authentication
         const userId = await getAuthUserId(ctx);
         if (userId === null) {
@@ -168,13 +174,14 @@ export const get_car_history = query({
         limit: v.optional(v.number()),
     },
     handler: async (ctx, args) => {
+        await checkAuthenticated(ctx);
         // Require authentication
         const userId = await getAuthUserId(ctx);
         if (userId === null) {
             throw new Error("Unauthorized: Authentication required");
         }
 
-        let historyQuery = ctx.db
+        const historyQuery = ctx.db
             .query("car_history")
             .withIndex("by_licensePlate", (q) => q.eq("licensePlate", args.licensePlate))
             .order("desc");
@@ -193,13 +200,14 @@ export const get_all_history = query({
         limit: v.optional(v.number()),
     },
     handler: async (ctx, args) => {
+        await checkAuthenticated(ctx);
         // Require authentication
         const userId = await getAuthUserId(ctx);
         if (userId === null) {
             throw new Error("Unauthorized: Authentication required");
         }
 
-        let historyQuery = ctx.db
+        const historyQuery = ctx.db
             .query("car_history")
             .order("desc");
 

@@ -10,69 +10,53 @@
   font-display: swap;
 }
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  /* Default: Dark Mode (Arc / Login Match) */
-  --bg-app: #0a0f1e;
-  --bg-sidebar: rgba(10, 15, 30, 0.85);
-  --bg-card: rgba(255, 255, 255, 0.04);
-  --text-primary: rgba(255, 255, 255, 0.95);
-  --text-muted: rgba(255, 255, 255, 0.45);
-  --border-card: rgba(255, 255, 255, 0.1);
-  --border-hover: rgba(92, 149, 255, 0.3);
-  --shadow-card: 0 12px 48px rgba(0, 0, 0, 0.5);
-  --accent-blue: rgba(92, 149, 255, 0.9);
-  --accent-blue-dim: rgba(140, 190, 255, 0.1);
-  --nav-active-bg: rgba(255, 255, 255, 0.12);
-  --nav-active-text: #ffffff;
-  --nav-hover-bg: rgba(255, 255, 255, 0.07);
-  --glass-blur: blur(24px);
-
-  /* Legacy tokens (keep for compatibility) */
-  --white: #FEFFFC;
-  --dark-blue: #0F2044;
-  --grey: #707B90;
-  --red-pink: #DC362E;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg-app: linear-gradient(135deg, #f0f4ff 0%, #e0e7ff 100%);
-    --bg-sidebar: #F2F3F7;
-    --bg-card: #FFFFFF;
-    --text-primary: #0F2044;
-    --text-muted: #707B90;
-    --border-card: rgba(0, 0, 0, 0.06);
-    --border-hover: rgba(62, 99, 221, 0.2);
-    --shadow-card: 0 8px 30px rgba(0, 0, 0, 0.08);
-    --accent-blue: #3E63DD;
-    --accent-blue-dim: rgba(62, 99, 221, 0.08);
-    --nav-active-bg: #E8EFFF;
-    --nav-active-text: #0F2044;
-    --nav-hover-bg: rgba(0, 0, 0, 0.04);
-    --glass-blur: none;
-    --bg-content-light: #FFFFFF;
-    --logo-filter: brightness(0) saturate(100%) invert(11%) sepia(34%) saturate(735%) hue-rotate(185deg) brightness(91%) contrast(97%);
-  }
-}
-
-/* Explicit class-based override if needed */
-body.light-mode {
-  --bg-app: linear-gradient(135deg, #f0f4ff 0%, #e0e7ff 100%);
-  --bg-sidebar: #F2F3F7;
-  --bg-card: #FFFFFF;
-  --text-primary: #0F2044;
-  --text-muted: #707B90;
-  --border-card: rgba(0, 0, 0, 0.06);
-  --border-hover: rgba(62, 99, 221, 0.2);
-  --shadow-card: 0 8px 30px rgba(0, 0, 0, 0.08);
-  --accent-blue: #3E63DD;
-  --accent-blue-dim: rgba(62, 99, 221, 0.08);
-  --nav-active-bg: #E8EFFF;
-  --nav-active-text: #0F2044;
-  --nav-hover-bg: rgba(0, 0, 0, 0.04);
+  color-scheme: dark;
+  --bg-app: #0a1221;
+  --bg-sidebar: #0d1728;
+  --bg-card: #111e32;
+  --bg-elevated: #19283e;
+  --text-primary: #f1f5fc;
+  --text-muted: #a8b8cf;
+  --border-card: #2a3b53;
+  --border-hover: #5b86d0;
+  --shadow-card: 0 8px 32px #02081324;
+  --accent-blue: #8bb6ff;
+  --accent-foreground: #0d1a30;
+  --accent-blue-dim: #182f52;
+  --nav-active-bg: #1d365b;
+  --nav-active-text: #c1d8ff;
+  --nav-hover-bg: #19283e;
   --glass-blur: none;
-  --bg-content-light: #FFFFFF;
-  --logo-filter: brightness(0) saturate(100%) invert(11%) sepia(34%) saturate(735%) hue-rotate(185deg) brightness(91%) contrast(100%);
+  --logo-glow: drop-shadow(0 0 8px #578fff80) drop-shadow(0 0 20px #376fee66);
+  --white: #fefffc;
+  --dark-blue: #0f2044;
+  --grey: #a8b8cf;
+  --red-pink: #ff91a1;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg-app: #f3f6fb;
+  --bg-sidebar: #edf2f9;
+  --bg-card: #ffffff;
+  --bg-elevated: #f3f6fb;
+  --text-primary: #17283f;
+  --text-muted: #465a74;
+  --border-card: #d6dfeb;
+  --border-hover: #7999d3;
+  --shadow-card: 0 8px 32px #20385a09;
+  --accent-blue: #255cca;
+  --accent-foreground: #ffffff;
+  --accent-blue-dim: #e4edff;
+  --nav-active-bg: #dae6fc;
+  --nav-active-text: #184eae;
+  --nav-hover-bg: #e0e8f3;
+  --logo-glow: drop-shadow(0 0 7px #578fff40) drop-shadow(0 0 16px #376fee20);
+  --grey: #465a74;
+  --red-pink: #b82439;
 }
 
 @theme inline {
@@ -359,4 +343,56 @@ body {
   padding: 0.75rem;
   border-radius: 8px;
   font-size: 0.9rem;
+}
+/* Administration: a single surface system for every built-in page. */
+.management-page {
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: clamp(20px, 3vw, 36px);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  color: var(--text-primary);
+  min-width: 0;
+}
+.management-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border-card);
+}
+.management-eyebrow {
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 600;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.management-heading { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.management-heading h1 { font-size: clamp(24px, 2.4vw, 30px); font-weight: 650; letter-spacing: -.035em; line-height: 1.2; margin: 0; }
+.management-summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); }
+.management-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+.management-panel { background: var(--bg-card); border: 1px solid var(--border-card); box-shadow: none; border-radius: 14px; }
+.management-page table { font-size: 13px; }
+.management-page th { font-size: 11px; font-weight: 600; letter-spacing: .055em; color: var(--text-muted); background: var(--bg-elevated); }
+.management-page td { border-bottom: 1px solid var(--border-card); }
+.management-page tr:last-child td { border-bottom: 0; }
+.management-section-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+.management-file-input { width: 100%; font-size: 13px; color: var(--text-muted); border: 1px dashed var(--border-card); border-radius: 10px; padding: 16px; background: var(--bg-elevated); }
+.management-file-input::file-selector-button { border: 0; border-radius: 7px; background: var(--accent-blue); color: var(--accent-foreground); padding: 8px 12px; margin-right: 12px; font-weight: 600; cursor: pointer; }
+.management-file-input:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 3px; }
+.management-server-tabs { display: flex; gap: 4px; overflow-x: auto; }
+.management-server-tabs button { padding: 9px 16px; color: var(--text-muted); border-radius: 8px; white-space: nowrap; font-size: 13px; }
+.management-server-tabs button[aria-current='page'] { background: var(--accent-blue-dim); color: var(--accent-blue); font-weight: 600; }
+.management-server-tabs button:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+@media (max-width: 640px) {
+  .management-page { padding: 20px 14px; gap: 20px; }
+  .management-header { align-items: flex-start; flex-direction: column; gap: 16px; padding-bottom: 20px; }
+  .management-actions { width: 100%; }
+  .management-page [role='grid'] { min-width: 580px; }
 }

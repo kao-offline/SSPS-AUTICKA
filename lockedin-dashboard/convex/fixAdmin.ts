@@ -1,39 +1,43 @@
-import { mutation } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import bcrypt from "bcryptjs";
 
-export const fixAdminUser = mutation({
-    args: {},
-    handler: async (ctx) => {
-        // 1. Find user by username "admin"
-        // Using schema index if available, check schema.ts
-        // users table has index "username"
+export const fixAdminUser = internalMutation({
+    args: { username: v.string(), password: v.string() },
+    handler: async (ctx, args) => {
+        const username = args.username;
+        const normalizedUsername = username.trim().toLowerCase();
+        const password = args.password;
+        if (password.length < 8) throw new Error("Password must have at least 8 characters");
+
+        // 1. Find or create user "admin"
         const adminUser = await ctx.db.query("users")
-            .withIndex("username", q => q.eq("username", "admin"))
+            .withIndex("username", q => q.eq("username", normalizedUsername))
             .first();
 
-        // 2. Hash password "adminadmin"
-        const hash = bcrypt.hashSync("adminadmin", 10);
+        // 2. Hash password
+        const hash = bcrypt.hashSync(password, 10);
         let status = "";
 
         let userId = adminUser?._id;
 
         if (adminUser) {
-            status += `Found User 'admin' (${adminUser._id}). `;
+            await ctx.db.patch(adminUser._id, {
+                isApproved: true,
+                usrData: JSON.stringify({ ...JSON.parse(adminUser.usrData || '{}'), role: 'admin', isActive: true }),
+            });
+            status += `Found User '${normalizedUsername}' (${adminUser._id}). `;
         } else {
-            // Assume user might be in legacy table or not exist
-            // For now, if not found, we can't easily CREATE it without breaking other things potentially
-            // But let's try to minimal create if requested? 
-            // User asked "test if login passes", implying they expect it to work or want it to work.
-            // Let's just report if missing.
-            status += "User 'admin' NOT found in 'users' table. ";
-
-            // Check legacy?
-            const legacy = await ctx.db.query("usrs").withIndex("by_usrname", q => q.eq("username", "admin")).first();
-            if (legacy) {
-                status += "Found in legacy 'usrs' table. Migration might be needed. ";
-            }
-            return status;
+            const createdUserId = await ctx.db.insert("users", {
+                username: normalizedUsername,
+                email: normalizedUsername,
+                name: normalizedUsername,
+                isApproved: true,
+                createdAt: Date.now(),
+                usrData: JSON.stringify({ role: 'admin', isActive: true }),
+            });
+            userId = createdUserId;
+            status += `Created user '${normalizedUsername}' (${createdUserId}). `;
         }
 
         // 3. Update authAccount
@@ -49,19 +53,51 @@ export const fixAdminUser = mutation({
 
         if (authAccount) {
             await ctx.db.patch(authAccount._id, {
-                secret: hash
+                secret: hash, providerAccountId: normalizedUsername
             });
-            status += "Refreshed password to 'adminadmin'.";
+            status += 'Password refreshed.';
         } else {
             await ctx.db.insert("authAccounts", {
                 userId: userId,
                 provider: "password",
-                providerAccountId: "admin", // usually username
+                providerAccountId: normalizedUsername,
                 secret: hash
             });
-            status += "Created authAccount with password 'adminadmin'.";
+            status += 'Auth account created.';
         }
 
         return status;
+    }
+});
+
+export const setAdminRole = internalMutation({
+    args: {
+        username: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const username = args.username || "admin";
+        const normalizedUsername = username.trim().toLowerCase();
+
+        // Find user by username
+        const user = await ctx.db.query("users")
+            .withIndex("username", q => q.eq("username", normalizedUsername))
+            .first();
+
+        if (!user) {
+            throw new Error(`User '${username}' not found`);
+        }
+
+        // Update usrData with admin role
+        const usrData = {
+            ...JSON.parse(user.usrData || "{}"),
+            role: "admin"
+        };
+
+        await ctx.db.patch(user._id, {
+            usrData: JSON.stringify(usrData),
+            isApproved: true
+        });
+
+        return `✅ User '${username}' now has admin role`;
     }
 });

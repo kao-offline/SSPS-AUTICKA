@@ -1,151 +1,39 @@
-/**
- * LockedIN Dashboard - Fiber Plugin Tool
- * 
- * A unified CLI for managing the Fiber plugin ecosystem.
- * 
- * Usage: node plugin-tool.js [command] [args]
- * Use --help for documentation.
- */
-
-const { ConvexHttpClient } = require('convex/browser');
-const fs = require('fs');
-const path = require('path');
-
-// Configuration
-function getEnvConfig() {
-    const config = {
-        convexUrl: process.env.NEXT_PUBLIC_CONVEX_URL || 'https://modest-pig-521.convex.cloud'
-    };
-
-    const envLocalPath = path.join(__dirname, '.env.local');
-    if (fs.existsSync(envLocalPath)) {
-        const envContent = fs.readFileSync(envLocalPath, 'utf8');
-        const match = envContent.match(/^NEXT_PUBLIC_CONVEX_URL=(.+)$/m);
-        if (match && match[1]) {
-            config.convexUrl = match[1].trim();
-        }
-    }
-    return config;
-}
-
-const config = getEnvConfig();
-const convex = new ConvexHttpClient(config.convexUrl);
-
-const commands = {
-    'sync': {
-        description: 'Automatically scans and registers all plugin endpoints with Convex',
-        usage: '',
-        fn: async () => {
-            console.log('🔧 Syncing plugin endpoints from manifests...');
-            try {
-                const result = await convex.action('context:syncPluginEndpoints', {});
-                if (result.success) {
-                    console.log(`✅ Sync completed! Updated: ${result.updated}, Total: ${result.total}`);
-                } else {
-                    console.error('❌ Sync failed:', result.message);
-                }
-            } catch (error) {
-                console.error('❌ Error:', error.message);
-            }
-        }
-    },
-    'update': {
-        description: 'Refreshes the manifest and endpoints for a specific plugin',
-        usage: '<pluginName>',
-        fn: async ([pluginName]) => {
-            if (!pluginName) {
-                console.error('❌ Missing plugin name.');
-                return;
-            }
-            console.log(`📦 Updating plugin: ${pluginName}...`);
-            try {
-                // Find manifest in common locations
-                const manifestLocations = [
-                    (`./test-plugin-files/${pluginName}/manifest.json`),
-                    (`./plugins/${pluginName}/manifest.json`)
-                ];
-                
-                let manifest = null;
-                for (const loc of manifestLocations) {
-                    const fullPath = path.join(__dirname, loc);
-                    if (fs.existsSync(fullPath)) {
-                        manifest = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
-                        break;
-                    }
-                }
-
-                if (!manifest) {
-                    console.error(`❌ Manifest for "${pluginName}" not found.`);
-                    return;
-                }
-
-                const plugin = await convex.query('context:getPluginByName', { name: pluginName });
-                if (!plugin) {
-                    console.error(`❌ Plugin "${pluginName}" not found in database.`);
-                    return;
-                }
-
-                await convex.mutation('context:updatePlugin', {
-                    pluginId: plugin._id,
-                    author: manifest.author || plugin.author,
-                    version: manifest.version || plugin.version,
-                    description: manifest.description || plugin.description,
-                    uploadDate: Date.now(),
-                    apiEndpoints: manifest.apiEndpoints || []
-                });
-                console.log(`✅ Plugin "${pluginName}" updated with ${manifest.apiEndpoints?.length || 0} endpoints.`);
-            } catch (error) {
-                console.error('❌ Error:', error.message);
-            }
-        }
-    },
-    'list': {
-        description: 'Displays all published plugins and their current status',
-        usage: '',
-        fn: async () => {
-            console.log('🌐 Published Plugins:');
-            try {
-                const plugins = await convex.query('context:getAllPlugins', {});
-                console.table(plugins.map(p => ({
-                    Name: p.name,
-                    Version: p.version,
-                    Author: p.author,
-                    Endpoints: (p.apiEndpoints || []).length
-                })));
-            } catch (error) {
-                console.error('❌ Error:', error.message);
-            }
-        }
-    }
-};
-
 async function main() {
-    const args = process.argv.slice(2);
-    const commandName = args[0];
-
-    if (!commandName || commandName === '--help' || commandName === '-h') {
-        console.log('\n🔌 LockedIN Dashboard Plugin Tool\n');
-        console.log('Usage: node plugin-tool.js <command> [args]\n');
-        console.log('Commands:');
-        Object.entries(commands).forEach(([name, cmd]) => {
-            console.log(`  ${name.padEnd(20)} ${cmd.description}`);
-            if (cmd.usage) console.log(`                       Usage: ${cmd.usage}`);
-        });
-        console.log('\n');
-        return;
-    }
-
-    const command = commands[commandName];
-    if (!command) {
-        console.error(`❌ Unknown command: ${commandName}. Use --help for a list of commands.`);
-        return;
-    }
-
-    try {
-        await command.fn(args.slice(1));
-    } catch (error) {
-        console.error('❌ Fatal error:', error);
-    }
+  const { ConvexHttpClient } = await import('convex/browser');
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const [command, pluginName] = process.argv.slice(2);
+  if (!command || command === '--help') {
+    console.log('Commands: list, sync. Load NEXT_PUBLIC_CONVEX_URL, AUDIT_LOGIN_USERNAME and AUDIT_LOGIN_PASSWORD using node --env-file.');
+    return;
+  }
+  const url=process.env.NEXT_PUBLIC_CONVEX_URL?.trim();
+  if (!url || !process.env.AUDIT_LOGIN_USERNAME || !process.env.AUDIT_LOGIN_PASSWORD) throw new Error('Backend URL and admin login are required');
+  const client=new ConvexHttpClient(url);
+  const login=await client.action('auth:signIn',{provider:'password',params:{email:process.env.AUDIT_LOGIN_USERNAME,password:process.env.AUDIT_LOGIN_PASSWORD,flow:'signIn'}});
+  if (!login.tokens?.token) throw new Error('Admin login failed');
+  client.setAuth(login.tokens.token);
+  try {
+    const plugins=await client.query('context:getAllPlugins',{});
+    if (command==='list') {
+      console.table(plugins.map(p=>({name:p.name,version:p.version,isActive:p.isActive})));
+    } else if (command==='sync' || command==='update') {
+      for (const plugin of plugins.filter(p=>!pluginName || p.name===pluginName)) {
+        let manifest;
+        if (command==='update') {
+          if (!pluginName || /[/\\]|\.\./.test(pluginName)) throw new Error('A valid plugin name is required');
+          manifest=JSON.parse((await fs.readFile(path.resolve(__dirname,'../test-plugin-files',pluginName,'manifest.json'),'utf8')).replace(/^\uFEFF/,''));
+        } else {
+          const url=await client.query('context:getFileUrl',{fileId:plugin.manifestFileId});
+          const response=await fetch(url);
+          if (!response.ok) throw new Error('Manifest download failed');
+          manifest=await response.json();
+        }
+        const endpoints=Array.isArray(manifest.apiEndpoints)?manifest.apiEndpoints:[];
+        await client.mutation('pluginFramework:registerPluginApiEndpoints',{pluginName:plugin.name,endpoints});
+        console.log('Updated endpoints:',plugin.name);
+      }
+    } else throw new Error('Unknown command; use --help');
+  } finally { await client.action('auth:signOut',{}); }
 }
-
-main();
+main().catch(error => { console.error(error.message); process.exitCode=1; });

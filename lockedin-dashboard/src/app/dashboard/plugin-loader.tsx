@@ -104,7 +104,8 @@ export const PluginLoader: React.FC<PluginLoaderProps> = ({ pluginName, username
 
        // Create the plugin component that renders the plugin's UI
        const PluginComponent = () => {
-         const [, setPluginInstance] = useState<Record<string, unknown> | null>(null);
+         const instanceRef = useRef<any>(null);
+         const isReusedRef = useRef<boolean>(false);
          const containerRef = useRef<HTMLDivElement>(null);
 
          useEffect(() => {
@@ -114,7 +115,7 @@ export const PluginLoader: React.FC<PluginLoaderProps> = ({ pluginName, username
                const backgroundInstance = getBackgroundPlugin(pluginName);
                if (backgroundInstance && containerRef.current) {
                  console.log(`[PluginLoader] Reusing background plugin: ${pluginName}`);
-                 
+
                  // Get or create the hidden container
                  let hiddenContainer = document.getElementById(`plugin-bg-${pluginName}`);
                  if (!hiddenContainer) {
@@ -123,13 +124,14 @@ export const PluginLoader: React.FC<PluginLoaderProps> = ({ pluginName, username
                    hiddenContainer.style.display = 'none';
                    document.body.appendChild(hiddenContainer);
                  }
-                 
+
                  // Create UI in the visible container
                  if (typeof backgroundInstance.createUI === 'function') {
                    backgroundInstance.createUI(containerRef.current);
                  }
-                 
-                 setPluginInstance(backgroundInstance);
+
+                 instanceRef.current = backgroundInstance;
+                 isReusedRef.current = true;
                  return;
                }
 
@@ -138,7 +140,7 @@ export const PluginLoader: React.FC<PluginLoaderProps> = ({ pluginName, username
 
                // Remove ES6 export statements and convert to browser-compatible code
                let processedCode = coreContent;
-               
+
                // Replace export statements with global assignments
                processedCode = processedCode
                  .replace(/export\s+default\s+(\w+);?/g, 'window.TempTestPlugin = $1;')
@@ -147,7 +149,7 @@ export const PluginLoader: React.FC<PluginLoaderProps> = ({ pluginName, username
                  .replace(/export\s+class\s+(\w+)/g, 'window.$1 = class $1')
                  .replace(/export\s*\{[^}]*\}/g, '')
                  .replace(/import\s+.*?from\s+['"][^'"]*['"];?/g, '');
-               
+
                // Wrap the plugin code in an IIFE
                const wrappedCode = `
                  (function() {
@@ -162,7 +164,7 @@ export const PluginLoader: React.FC<PluginLoaderProps> = ({ pluginName, username
                    }
                  })();
                `;
-               
+
                // Make Convex client available to plugins
                // The Convex client will be set by the dashboard context
                 if (typeof window !== 'undefined' && !(window as unknown as Record<string, unknown>).convexClient) {
@@ -176,15 +178,15 @@ export const PluginLoader: React.FC<PluginLoaderProps> = ({ pluginName, username
                  HeroUI,
                };
                (window as unknown as Record<string, unknown>).HeroUI = HeroUI;
-               
+
                // Execute the processed code
                eval(wrappedCode);
-               
+
                // Check if plugin loaded successfully
                 if ((window as unknown as Record<string, unknown>).TempTestPlugin) {
                   const instance = new (((window as unknown as Record<string, unknown>).TempTestPlugin) as new () => Record<string, unknown>)();
-                 setPluginInstance(instance);
-                 
+                 instanceRef.current = instance;
+
                  // Create SDK instance for this plugin
                  const pluginContext = {
                    pluginName,
@@ -193,11 +195,11 @@ export const PluginLoader: React.FC<PluginLoaderProps> = ({ pluginName, username
                    convexClient: (window as unknown as Record<string, unknown>).convexClient,
                  };
                  const sdkInstance = createPluginSDK(pluginContext);
-                 
+
                  // Expose SDK instance globally for plugins to use
                  (window as unknown as Record<string, unknown>).PluginSDK = sdkInstance;
                  (instance as any).PluginSDK = sdkInstance;
-                 
+
                  // Initialize the plugin
                  if (typeof instance.initialize === 'function') {
                    instance.initialize({
@@ -209,35 +211,44 @@ export const PluginLoader: React.FC<PluginLoaderProps> = ({ pluginName, username
                      sdkFactory: createPluginSDK,
                    });
                  }
-                 
+
                  // Create the plugin UI if the method exists
                  if (typeof instance.createUI === 'function' && containerRef.current) {
                    instance.createUI(containerRef.current);
                  }
-                 
+
                  // Cleanup global reference
                  delete (window as unknown as Record<string, unknown>).TempTestPlugin;
                } else if ((window as unknown as Record<string, unknown>).TempTestPluginError) {
                  console.error('Plugin loading failed:', (window as unknown as Record<string, unknown>).TempTestPluginError);
                  delete (window as unknown as Record<string, unknown>).TempTestPluginError;
                }
-             
-               
+
+
              } catch (error) {
                console.error('Plugin loading error:', error);
              }
            };
-           
+
            loadPluginCode();
-           
+
            // Cleanup function
            return () => {
-             setPluginInstance(prevInstance => {
-               if (prevInstance && typeof prevInstance.destroy === 'function') {
-                 prevInstance.destroy();
-               }
-               return null;
-             });
+             const instance = instanceRef.current;
+             const isReused = isReusedRef.current;
+
+             // ONLY destroy if this is NOT a shared background plugin.
+             // Background plugins are managed by BackgroundPluginManager.
+             if (instance && !isReused && typeof instance.destroy === 'function') {
+               // Ensure destruction happens safely after the current render cycle
+               setTimeout(() => {
+                 try {
+                   instance.destroy();
+                 } catch (e) {
+                   console.error('Error destroying plugin:', e);
+                 }
+               }, 0);
+             }
            };
          }, []); // Empty dependency array - only run once on mount
 
@@ -270,8 +281,8 @@ export const PluginLoader: React.FC<PluginLoaderProps> = ({ pluginName, username
 
   if (loading) {
     return (
-      <div style={{ 
-        padding: '20px', 
+      <div style={{
+        padding: '20px',
         textAlign: 'center',
         fontFamily: 'JetBrains Mono, monospace'
       }}>
@@ -283,8 +294,8 @@ export const PluginLoader: React.FC<PluginLoaderProps> = ({ pluginName, username
 
   if (error) {
     return (
-      <div style={{ 
-        padding: '20px', 
+      <div style={{
+        padding: '20px',
         textAlign: 'center',
         fontFamily: 'JetBrains Mono, monospace',
         color: '#dc3545'
@@ -297,8 +308,8 @@ export const PluginLoader: React.FC<PluginLoaderProps> = ({ pluginName, username
 
   if (!pluginComponent) {
     return (
-      <div style={{ 
-        padding: '20px', 
+      <div style={{
+        padding: '20px',
         textAlign: 'center',
         fontFamily: 'JetBrains Mono, monospace'
       }}>

@@ -1,499 +1,953 @@
-// Parking Spaces Plugin - Visual display of parking space fullness
-class TestPlugin {
+class ParkingSpacesPlugin {
   constructor() {
-    this.name = "Parking Spaces Monitor";
-    this.version = "1.0.0";
-    this.isActive = false;
-    this.spaces = [];
-    this.refreshInterval = null;
-    this.convexClient = null;
+    this.sdk = null;
+    this.context = null;
+    this.root = null;
+    this.container = null;
+    this.initError = null;
   }
 
-  // Initialize the plugin
-  initialize() {
-    console.log(`Initializing ${this.name} v${this.version}`);
-    this.isActive = true;
-    this.initializeConvexClient();
-    return true;
-  }
-
-  // Initialize Convex client
-  initializeConvexClient() {
-    try {
-      if (window.convexClient) {
-        this.convexClient = window.convexClient;
-        console.log('Convex client initialized for parking spaces plugin');
-        this.loadSpaces();
-      } else {
-        console.warn('Convex client not available, will retry...');
-        setTimeout(() => {
-          this.initializeConvexClient();
-        }, 1000);
-      }
-    } catch (error) {
-      console.error('Failed to initialize Convex client:', error);
-      setTimeout(() => {
-        this.initializeConvexClient();
-      }, 1000);
-    }
-  }
-
-  // Load spaces from database
-  async loadSpaces() {
-    if (!this.convexClient) {
-      console.warn('Convex client not available for loading spaces');
-      // Use mock data as fallback
-      this.spaces = this.getMockSpaces();
-      this.startLiveUpdates();
-      return;
-    }
-
-    try {
-      const spaces = await this.convexClient.query('context:getAllSpaces');
-      console.log('Loaded spaces from database:', spaces);
-      
-      // Map database spaces to UI layout positions
-      if (spaces && spaces.length > 0) {
-        this.spaces = this.mapSpacesToLayout(spaces);
-        console.log('Using Convex database spaces');
-      } else {
-        console.log('No spaces found in database, using mock data');
-        this.spaces = this.getMockSpaces();
-      }
-      this.startLiveUpdates(); // Start live updates after loading data
-    } catch (error) {
-      console.error('Failed to load spaces:', error);
-      // Use mock data as fallback
-      this.spaces = this.getMockSpaces();
-      this.startLiveUpdates();
-    }
-  }
-
-  // Map database spaces to the exact layout from the sketch
-  mapSpacesToLayout(dbSpaces) {
-    // Create a map of spaceName to isFull status
-    const spaceMap = {};
-    dbSpaces.forEach(space => {
-      spaceMap[space.spaceName] = space.isFull;
-    });
-
-    // Layout definition matching the actual photo layout
-    const layout = [
-      // Top-right group (8 vertical bars) - spaces 1-8
-      { spaceName: 'space1', x: 550, y: 150, type: 'vertical', width: 40, height: 80 },
-      { spaceName: 'space2', x: 500, y: 150, type: 'vertical', width: 40, height: 80 },
-      { spaceName: 'space3', x: 450, y: 150, type: 'vertical', width: 40, height: 80 },
-      { spaceName: 'space4', x: 400, y: 150, type: 'vertical', width: 40, height: 80 },
-      { spaceName: 'space5', x: 350, y: 150, type: 'vertical', width: 40, height: 80 },
-      { spaceName: 'space6', x: 300, y: 150, type: 'vertical', width: 40, height: 80 },
-      { spaceName: 'space7', x: 250, y: 150, type: 'vertical', width: 40, height: 80 },
-      { spaceName: 'space8', x: 200, y: 150, type: 'vertical', width: 40, height: 80 },
-      
-      // Top-left group (2 horizontal bars) - spaces 9-10
-      { spaceName: 'space9', x: 100, y: 180, type: 'horizontal', width: 80, height: 35 },
-      { spaceName: 'space10', x: 100, y: 230, type: 'horizontal', width: 80, height: 35 },
-      
-      // Bottom-left group (5 diagonal bars) - spaces 11-15
-      { spaceName: 'space11', x: 110, y: 310, type: 'diagonal', width: 100, height: 35, rotation: -15 },
-      { spaceName: 'space12', x: 110, y: 370, type: 'diagonal', width: 100, height: 35, rotation: -15 },
-      { spaceName: 'space13', x: 110, y: 430, type: 'diagonal', width: 100, height: 35, rotation: -15 },
-      { spaceName: 'space14', x: 110, y: 490, type: 'diagonal', width: 100, height: 35, rotation: -15 },
-      { spaceName: 'space15', x: 110, y: 550, type: 'diagonal', width: 100, height: 35, rotation: -15 }
-    ];
-
-    // Map layout positions to actual space data
-    return layout.map(item => ({
-      ...item,
-      isFull: spaceMap[item.spaceName] || false,
-      displayName: item.spaceName.replace('space', '')
-    }));
-  }
-
-  // Fallback mock data
-  getMockSpaces() {
-    // Parking spaces positioned to match the map layout
-    return [
-      // Top horizontal row (right to left)
-      { spaceName: 'space1', x: 680, y: 80, type: 'horizontal', width: 60, height: 40, isFull: false, displayName: '1' },
-      { spaceName: 'space2', x: 580, y: 80, type: 'horizontal', width: 60, height: 40, isFull: false, displayName: '2' },
-      { spaceName: 'space3', x: 480, y: 80, type: 'horizontal', width: 60, height: 40, isFull: true, displayName: '3' },
-      { spaceName: 'space4', x: 380, y: 80, type: 'horizontal', width: 60, height: 40, isFull: true, displayName: '4' },
-      { spaceName: 'space5', x: 280, y: 80, type: 'horizontal', width: 60, height: 40, isFull: true, displayName: '5' },
-      { spaceName: 'space6', x: 180, y: 80, type: 'horizontal', width: 60, height: 40, isFull: true, displayName: '6' },
-      { spaceName: 'space7', x: 80, y: 80, type: 'horizontal', width: 60, height: 40, isFull: true, displayName: '7' },
-      { spaceName: 'space8', x: 20, y: 80, type: 'horizontal', width: 60, height: 40, isFull: true, displayName: '8' },
-      
-      // Left vertical column
-      { spaceName: 'space9', x: 20, y: 140, type: 'vertical', width: 40, height: 60, isFull: true, displayName: '9' },
-      { spaceName: 'space10', x: 20, y: 220, type: 'vertical', width: 40, height: 60, isFull: true, displayName: '10' },
-      { spaceName: 'space11', x: 20, y: 300, type: 'vertical', width: 40, height: 60, isFull: true, displayName: '11' },
-      { spaceName: 'space12', x: 20, y: 380, type: 'vertical', width: 40, height: 60, isFull: true, displayName: '12' },
-      { spaceName: 'space13', x: 20, y: 460, type: 'vertical', width: 40, height: 60, isFull: true, displayName: '13' },
-      { spaceName: 'space14', x: 20, y: 540, type: 'vertical', width: 40, height: 60, isFull: true, displayName: '14' },
-      { spaceName: 'space15', x: 20, y: 620, type: 'vertical', width: 40, height: 60, isFull: false, displayName: '15' }
-    ];
-  }
-
-  // Get color based on space status
-  getSpaceColor(isFull) {
-    return isFull ? '#DC362E' : '#4caf50'; // Red if full, Brighter green if available
-  }
-
-  // Get status text
-  getSpaceStatus(isFull) {
-    return isFull ? 'Full' : 'Available';
-  }
-
-  // Update space status in database
-  async updateSpaceStatus(spaceName, newStatus) {
-    if (!this.convexClient) {
-      console.warn('Convex client not available for updating space status');
-      return;
-    }
-
-    try {
-      await this.convexClient.mutation('context:updateSpaceStatus', {
-        spaceName: spaceName,
-        isFull: newStatus
-      });
-      
-      // Update local data
-      const space = this.spaces.find(s => s.spaceName === spaceName);
-      if (space) {
-        space.isFull = newStatus;
-      }
-      
-      console.log(`Updated ${spaceName} status to ${newStatus ? 'full' : 'available'}`);
-    } catch (error) {
-      console.error('Failed to update space status:', error);
-    }
-  }
-
-  // Get plugin information
-  getInfo() {
+  createDefaultConfig() {
     return {
-      name: this.name,
-      version: this.version,
-      isActive: this.isActive,
-      spacesCount: this.spaces.length,
-      type: 'Parking Management Plugin'
+      version: 3,
+      mapFileName: null,
+      mapMeta: null,
+      spaces: [],
+      updatedAt: Date.now(),
     };
   }
 
-  // Create the plugin UI
-  createUI(container) {
-    // Clear container
-    container.innerHTML = '';
-    
-    // Ensure we have spaces data
-    if (!this.spaces || this.spaces.length === 0) {
-      console.log('No spaces data available, loading mock data');
-      this.spaces = this.getMockSpaces();
-    }
-    
-    // Load data from database first, then create UI
-    this.loadSpacesFromDatabase().then(() => {
-      // Clear container again before rendering with new data
-      container.innerHTML = '';
-      this.renderUI(container);
-    }).catch(() => {
-      // Fallback to mock data if database fails
-      console.log('Database failed, using mock data');
-      // Clear container again before rendering with mock data
-      container.innerHTML = '';
-      this.spaces = this.getMockSpaces();
-      this.renderUI(container);
-    });
+  clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
   }
 
-  // Load spaces from database
-  async loadSpacesFromDatabase() {
-    if (!this.convexClient) {
-      throw new Error('Convex client not available');
-    }
+  normalizeSpace(space, index) {
+    const fallbackLabel = String(index + 1);
+    const normalized = {
+      id: space.id || `space_${Date.now()}_${index}`,
+      name: space.name || `space-${fallbackLabel}`,
+      label: space.label || fallbackLabel,
+      x: typeof space.x === 'number' ? space.x : 10,
+      y: typeof space.y === 'number' ? space.y : 10,
+      width: typeof space.width === 'number' ? space.width : 7,
+      height: typeof space.height === 'number' ? space.height : 11,
+      angle: typeof space.angle === 'number' ? space.angle : 0,
+      radius: typeof space.radius === 'number' ? space.radius : 12,
+      isFull: Boolean(space.isFull),
+      updatedAt: typeof space.updatedAt === 'number' ? space.updatedAt : Date.now(),
+    };
 
-    try {
-      const spaces = await this.convexClient.query('context:getAllSpaces');
-      console.log('Loaded spaces from database:', spaces);
-      
-      if (spaces && spaces.length > 0) {
-        this.spaces = this.mapSpacesToLayout(spaces);
-      } else {
-        throw new Error('No spaces found in database');
-      }
-    } catch (error) {
-      console.error('Failed to load spaces from database:', error);
-      throw error;
-    }
+    normalized.width = this.clamp(normalized.width, 0.8, 40);
+    normalized.height = this.clamp(normalized.height, 1.2, 40);
+    normalized.radius = this.clamp(normalized.radius, 0, 40);
+    normalized.x = this.clamp(normalized.x, 0, 100 - normalized.width);
+    normalized.y = this.clamp(normalized.y, 0, 100 - normalized.height);
+
+    return normalized;
   }
 
-  // Render the UI with current spaces data
-  renderUI(container) {
-    // Ensure we have spaces data
-    if (!this.spaces || this.spaces.length === 0) {
-      console.log('No spaces data available, loading mock data');
-      this.spaces = this.getMockSpaces();
-    }
-    
-    // Clear previous content
-    container.innerHTML = '';
-    this.containerElement = container; // Store for future updates
-    
-    // Main container following current UI standards
-    const mainDiv = document.createElement('div');
-    mainDiv.style.cssText = `
-      padding: 0;
-      font-family: 'JetBrains Mono', monospace;
-      width: 100%;
-      height: 100%;
-      background-color: var(--white, #FEFFFC);
-      color: var(--dark-blue, #0F2044);
-      display: flex;
-      flex-direction: row;
-      overflow: hidden;
-    `;
-    
-    // Map container with the actual map image as background - takes most of the space
-    const mapContainer = document.createElement('div');
-    mapContainer.style.cssText = `
-      flex: 3;
-      position: relative;
-      background-image: url('/media/map.jpg');
-      background-size: cover;
-      background-position: center;
-      background-repeat: no-repeat;
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    `;
-    
-    // Overlay container for parking spaces - scaled to match map
-    const overlayContainer = document.createElement('div');
-    overlayContainer.style.cssText = `
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-    `;
-    
-    console.log('Creating UI for spaces:', this.spaces);
-    
-    // Create parking spaces as button elements
-    this.spaces.forEach((space, index) => {
-      console.log(`Creating space ${index}:`, space);
-      
-      const spaceElement = document.createElement('button');
-      // Color based on isFull status from database - using UI color standards
-      const color = this.getSpaceColor(space.isFull);
-      
-      // Position and style based on space type - percentage-based positioning for responsive scaling
-      const scaleX = (space.x / 800) * 100; // Convert to percentage based on map reference size
-      const scaleY = (space.y / 700) * 100; // Convert to percentage based on map reference height
-      const scaleWidth = (space.width / 800) * 100;
-      const scaleHeight = (space.height / 700) * 100;
-      
-      let styles = `
-        position: absolute;
-        background-color: ${color};
-        border: 2px solid ${space.isFull ? '#8B0000' : '#28a745'};
-        border-radius: 6px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-weight: 600;
-        font-size: 12px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-        width: ${scaleWidth}%;
-        height: ${scaleHeight}%;
-        left: ${scaleX}%;
-        top: ${scaleY}%;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        pointer-events: auto;
-        z-index: 10;
-        font-family: 'JetBrains Mono', monospace;
-        outline: none;
-      `;
-      
-      // Add rotation for diagonal spaces
-      if (space.rotation) {
-        styles += `transform: rotate(${space.rotation}deg);`;
-      }
-      
-      spaceElement.style.cssText = styles;
-      spaceElement.textContent = space.displayName; // Show the number
-      spaceElement.title = `Space ${space.displayName}: ${space.isFull ? 'Occupied' : 'Available'}`;
-      spaceElement.disabled = true; // Disable to prevent errors
-      
-      // Add hover effects
-      spaceElement.addEventListener('mouseenter', () => {
-        const currentTransform = space.rotation ? `rotate(${space.rotation}deg)` : 'none';
-        spaceElement.style.transform = `${currentTransform} scale(1.05)`;
-        spaceElement.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.4)';
-      });
-      
-      spaceElement.addEventListener('mouseleave', () => {
-        const currentTransform = space.rotation ? `rotate(${space.rotation}deg)` : 'none';
-        spaceElement.style.transform = currentTransform;
-        spaceElement.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.3)';
-      });
-      
-      // Remove click handler to prevent errors
-      spaceElement.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        // Do nothing - just prevent errors
-      });
-      
-      overlayContainer.appendChild(spaceElement);
-    });
-    
-    mapContainer.appendChild(overlayContainer);
-    
-    // Status panel on the right side
-    const statusPanel = document.createElement('div');
-    statusPanel.style.cssText = `
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      padding: 30px;
-      background-color: var(--dark-blue, #0F2044);
-      color: var(--white, #FEFFFC);
-      font-family: 'JetBrains Mono', monospace;
-      gap: 20px;
-    `;
-    
-    const fullSpaces = this.spaces.filter(s => s.isFull).length;
-    const totalSpaces = this.spaces.length;
-    const availableSpaces = totalSpaces - fullSpaces;
-    
-    // Title
-    const statusTitle = document.createElement('h2');
-    statusTitle.style.cssText = `
-      margin: 0;
-      font-size: 24px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      text-align: center;
-    `;
-    statusTitle.textContent = 'STAV';
-    statusPanel.appendChild(statusTitle);
-    
-    // Occupied count
-    const occupiedDiv = document.createElement('div');
-    occupiedDiv.style.cssText = `
-      font-size: 32px;
-      font-weight: 700;
-      color: var(--red-pink, #DC362E);
-      text-align: center;
-    `;
-    occupiedDiv.innerHTML = `
-      <div>${fullSpaces}</div>
-      <div style="font-size: 16px; color: var(--white, #FEFFFC);">PLNÉ</div>
-    `;
-    statusPanel.appendChild(occupiedDiv);
-    
-    // Available count
-    const availableDiv = document.createElement('div');
-    availableDiv.style.cssText = `
-      font-size: 32px;
-      font-weight: 700;
-      color: #4caf50;
-      text-align: center;
-    `;
-    availableDiv.innerHTML = `
-      <div>${availableSpaces}</div>
-      <div style="font-size: 16px; color: var(--white, #FEFFFC);">PRÁZDNÉ</div>
-    `;
-    statusPanel.appendChild(availableDiv);
-    
-    // Total count
-    const totalDiv = document.createElement('div');
-    totalDiv.style.cssText = `
-      font-size: 32px;
-      font-weight: 700;
-      color: var(--white, #FEFFFC);
-      text-align: center;
-    `;
-    totalDiv.innerHTML = `
-      <div>${totalSpaces}</div>
-      <div style="font-size: 16px; color: var(--grey, #707B90);">CELKEM</div>
-    `;
-    statusPanel.appendChild(totalDiv);
-    
-    mainDiv.appendChild(mapContainer);
-    mainDiv.appendChild(statusPanel);
-    
-    container.appendChild(mainDiv);
-  }
+  async initialize(context) {
+    this.context = context;
+    this.sdk = this.resolveSdk(context);
 
-  // Start live updates for parking spaces
-  startLiveUpdates() {
-    if (this.refreshInterval) {
-      clearInterval(this.refreshInterval);
-    }
-    
-    // Update every 5 seconds by fetching fresh data from Convex
-    this.refreshInterval = setInterval(() => {
-      if (this.isActive) {
-        this.fetchLatestData();
-      }
-    }, 5000); // Update every 5 seconds
-  }
-
-  // Fetch latest data from Convex database
-  async fetchLatestData() {
-    if (!this.convexClient) {
-      console.warn('Convex client not available for live updates');
+    if (!this.sdk) {
+      this.initError = 'Plugin SDK not available';
+      console.error('[parking-spaces] Plugin SDK not available');
       return;
     }
 
+    if (typeof this.sdk.registerApiEndpoints === 'function') {
+      await this.sdk.registerApiEndpoints(['getSpaces', 'getMap', 'updateSpaceStatus']);
+    }
+  }
+
+  resolveSdk(context) {
+    const globalSdk = window.PluginSDK;
+
+    if (globalSdk && typeof globalSdk.getData === 'function') {
+      return globalSdk;
+    }
+
+    if (globalSdk && typeof globalSdk.createPluginSDK === 'function') {
+      return globalSdk.createPluginSDK({
+        pluginName: 'parking-spaces',
+        convexClient: context.convexClient,
+        username: context.username,
+        userData: context.userData,
+      });
+    }
+
+    if (context && typeof context.sdkFactory === 'function') {
+      return context.sdkFactory({
+        pluginName: 'parking-spaces',
+        convexClient: context.convexClient,
+        username: context.username,
+        userData: context.userData,
+      });
+    }
+
+    return null;
+  }
+
+  async loadConfig() {
+    const saved = this.sdk ? await this.sdk.getData('parking-config') : null;
+    const rawSpaces = Array.isArray(saved && saved.spaces) ? saved.spaces : [];
+    const config = {
+      ...this.createDefaultConfig(),
+      ...(saved && typeof saved === 'object' ? saved : {}),
+      spaces: rawSpaces.map((space, index) => this.normalizeSpace(space, index)),
+    };
+
+    const mapUrl = config.mapFileName && this.sdk
+      ? await this.loadMapUrl(config.mapFileName)
+      : null;
+
+    return {
+      ...config,
+      mapUrl,
+    };
+  }
+
+  async loadMapUrl(mapFileName) {
+    if (!this.sdk || !mapFileName) {
+      return null;
+    }
+
     try {
-      const spaces = await this.convexClient.query('context:getAllSpaces');
-      console.log('Fetched latest spaces from database:', spaces);
-      
-      if (spaces && spaces.length > 0) {
-        const newSpaces = this.mapSpacesToLayout(spaces);
-        
-        // Check if data has changed
-        const hasChanged = this.spaces.length !== newSpaces.length || 
-          this.spaces.some((space, index) => {
-            const newSpace = newSpaces[index];
-            return !newSpace || space.isFull !== newSpace.isFull;
-          });
-        
-        if (hasChanged) {
-          console.log('Parking data changed, updating UI');
-          this.spaces = newSpaces;
-          this.refreshUI();
-        }
-      }
+      const file = await this.sdk.getFileUrl(mapFileName);
+      return file && file.url ? file.url : null;
     } catch (error) {
-      console.error('Failed to fetch latest data:', error);
+      this.sdk.error('Failed to load parking map', error);
+      return null;
     }
   }
 
-  // Refresh UI method for live updates
-  refreshUI() {
-    if (this.containerElement) {
-      this.renderUI(this.containerElement);
+  async saveConfig(config) {
+    if (!this.sdk) {
+      return;
     }
+
+    const payload = {
+      ...config,
+      mapUrl: null,
+      spaces: (config.spaces || []).map((space, index) => this.normalizeSpace(space, index)),
+      updatedAt: Date.now(),
+    };
+    await this.sdk.setData('parking-config', payload);
   }
 
-  // Cleanup function
+  async uploadMap(file) {
+    if (!this.sdk || !file) {
+      return null;
+    }
+
+    const dataUrl = await this.readFileAsDataUrl(file);
+    await this.sdk.storeFile('parking-map', dataUrl, file.type || 'image/png', {
+      originalName: file.name,
+      uploadedAt: Date.now(),
+    });
+
+    const mapUrl = await this.loadMapUrl('parking-map');
+    return {
+      mapFileName: 'parking-map',
+      mapMeta: {
+        originalName: file.name,
+        size: file.size,
+        type: file.type || 'image/png',
+        uploadedAt: Date.now(),
+      },
+      mapUrl,
+    };
+  }
+
+  readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  isAdminFromSource(source) {
+    if (!source || typeof source !== 'object') {
+      return false;
+    }
+
+    if (source.role === 'admin') {
+      return true;
+    }
+
+    if (source.userData && typeof source.userData === 'object' && source.userData.role === 'admin') {
+      return true;
+    }
+
+    if (source.usrData && typeof source.usrData === 'object' && source.usrData.role === 'admin') {
+      return true;
+    }
+
+    if (typeof source.usrData === 'string') {
+      try {
+        const parsed = JSON.parse(source.usrData);
+        return parsed && parsed.role === 'admin';
+      } catch {
+        return false;
+      }
+    }
+
+    return false;
+  }
+
+  createUI(container) {
+    const runtime = this.context?.runtime || window.PluginRuntime || (window.parent && window.parent.PluginRuntime);
+    if (!runtime) {
+      container.innerHTML = '<div style="padding:16px;color:#ef4444">PluginRuntime not available.</div>';
+      return;
+    }
+
+    const { React, ReactDOMClient, HeroUI } = runtime;
+    if (!React || !ReactDOMClient || !HeroUI) {
+      container.innerHTML = '<div style="padding:16px;color:#ef4444">React/HeroUI runtime not available.</div>';
+      return;
+    }
+
+    const { createElement: e } = React;
+    const { Button, Card, Input, Badge } = HeroUI;
+    const plugin = this;
+
+    const App = () => {
+      const [config, setConfig] = React.useState(plugin.createDefaultConfig());
+      const [loading, setLoading] = React.useState(true);
+      const [saving, setSaving] = React.useState(false);
+      const [error, setError] = React.useState(plugin.initError);
+      const [isAdmin, setIsAdmin] = React.useState(false);
+      const [selectedId, setSelectedId] = React.useState(null);
+      const [assetUrls, setAssetUrls] = React.useState({ map: null, upload: null, status: null });
+      const fileInputRef = React.useRef(null);
+      const mapStageRef = React.useRef(null);
+      const dragRef = React.useRef(null);
+      const clipboardRef = React.useRef(null);
+      const historyRef = React.useRef([]);
+      const configRef = React.useRef(config);
+      const lastSnapshotRef = React.useRef('');
+
+      const snapshotOf = React.useRef((nextConfig) => JSON.stringify({
+        mapFileName: nextConfig.mapFileName,
+        mapMeta: nextConfig.mapMeta,
+        spaces: nextConfig.spaces,
+      })).current;
+
+      const cloneConfig = React.useRef((sourceConfig) => ({
+        ...sourceConfig,
+        mapMeta: sourceConfig.mapMeta ? { ...sourceConfig.mapMeta } : null,
+        spaces: (sourceConfig.spaces || []).map((space) => ({ ...space })),
+      })).current;
+
+      const pushHistorySnapshot = React.useRef(() => {
+        const snapshot = cloneConfig(configRef.current);
+        const serialized = snapshotOf(snapshot);
+        const history = historyRef.current;
+        if (history.length > 0 && snapshotOf(history[history.length - 1]) === serialized) {
+          return;
+        }
+
+        history.push(snapshot);
+        if (history.length > 60) {
+          history.shift();
+        }
+      }).current;
+
+      React.useEffect(() => {
+        configRef.current = config;
+      }, [config]);
+
+      const persist = React.useRef(async (nextConfig) => {
+        setSaving(true);
+        try {
+          await plugin.saveConfig(nextConfig);
+          lastSnapshotRef.current = snapshotOf(nextConfig);
+        } catch (persistError) {
+          setError(persistError instanceof Error ? persistError.message : 'Failed to save parking config');
+        } finally {
+          setSaving(false);
+        }
+      }).current;
+
+      React.useEffect(() => {
+        let active = true;
+        const boot = async () => {
+          try {
+            if (!plugin.sdk) {
+              throw new Error('Plugin SDK not available');
+            }
+
+            const user = await plugin.sdk.getCurrentUser();
+            const admin = await plugin.sdk.hasRole('admin');
+            const loaded = await plugin.loadConfig();
+            if (!active) {
+              return;
+            }
+
+            setIsAdmin(Boolean(
+              admin ||
+              plugin.isAdminFromSource(user) ||
+              plugin.isAdminFromSource(plugin.context?.userData) ||
+              plugin.isAdminFromSource(plugin.context)
+            ));
+            setConfig(loaded);
+            configRef.current = loaded;
+            historyRef.current = [];
+            setSelectedId(loaded.spaces[0] ? loaded.spaces[0].id : null);
+            lastSnapshotRef.current = snapshotOf(loaded);
+            setError(null);
+          } catch (bootError) {
+            if (active) {
+              setError(bootError instanceof Error ? bootError.message : 'Failed to load parking plugin');
+            }
+          } finally {
+            if (active) {
+              setLoading(false);
+            }
+          }
+        };
+
+        boot();
+        return () => {
+          active = false;
+        };
+      }, []);
+
+      React.useEffect(() => {
+        let active = true;
+        const loadAssets = async () => {
+          if (!plugin.sdk || typeof plugin.sdk.getAssetUrl !== 'function') {
+            return;
+          }
+
+          try {
+            const map = await plugin.sdk.getAssetUrl('map.svg');
+            const upload = await plugin.sdk.getAssetUrl('upload.svg');
+            const status = await plugin.sdk.getAssetUrl('status.svg');
+            if (active) {
+              setAssetUrls({ map, upload, status });
+            }
+          } catch {
+            // assets optional
+          }
+        };
+
+        loadAssets();
+        return () => {
+          active = false;
+        };
+      }, []);
+
+      React.useEffect(() => {
+        if (!plugin.sdk) {
+          return undefined;
+        }
+
+        const interval = setInterval(async () => {
+          try {
+            const latest = await plugin.loadConfig();
+            const nextSnapshot = snapshotOf(latest);
+            if (nextSnapshot !== lastSnapshotRef.current) {
+              setConfig(latest);
+              configRef.current = latest;
+              historyRef.current = [];
+              lastSnapshotRef.current = nextSnapshot;
+            }
+          } catch {
+            // ignore polling failures
+          }
+        }, 4000);
+
+        return () => clearInterval(interval);
+      }, []);
+
+      const counts = React.useMemo(() => {
+        const total = config.spaces.length;
+        const occupied = config.spaces.filter((space) => space.isFull).length;
+        return {
+          total,
+          occupied,
+          available: total - occupied,
+        };
+      }, [config]);
+
+      const selectedSpace = React.useMemo(
+        () => config.spaces.find((space) => space.id === selectedId) || null,
+        [config, selectedId]
+      );
+
+      const setNextConfig = async (nextConfig) => {
+        setConfig(nextConfig);
+        configRef.current = nextConfig;
+        await persist(nextConfig);
+      };
+
+      const undoLastChange = async () => {
+        const previous = historyRef.current.pop();
+        if (!previous) {
+          return;
+        }
+
+        const restored = cloneConfig(previous);
+        setConfig(restored);
+        configRef.current = restored;
+        setSelectedId(restored.spaces.some((space) => space.id === selectedId) ? selectedId : (restored.spaces[0] ? restored.spaces[0].id : null));
+        await persist(restored);
+      };
+
+      const handleMapUpload = async (event) => {
+        const file = event.target.files && event.target.files[0];
+        if (!file) {
+          return;
+        }
+
+        try {
+          pushHistorySnapshot();
+          setSaving(true);
+          const uploaded = await plugin.uploadMap(file);
+          const nextConfig = { ...configRef.current, ...uploaded };
+          await setNextConfig(nextConfig);
+          setError(null);
+        } catch (uploadError) {
+          setError(uploadError instanceof Error ? uploadError.message : 'Failed to upload map');
+        } finally {
+          setSaving(false);
+          event.target.value = '';
+        }
+      };
+
+      const createNewSpace = async () => {
+        if (!isAdmin) {
+          return;
+        }
+
+        pushHistorySnapshot();
+        const count = configRef.current.spaces.length + 1;
+        const newSpace = plugin.normalizeSpace({
+          id: `space_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          name: `space-${count}`,
+          label: String(count),
+          x: 45,
+          y: 44,
+          width: 4,
+          height: 6,
+          angle: 0,
+          radius: 8,
+          isFull: false,
+          updatedAt: Date.now(),
+        }, count - 1);
+
+        const nextConfig = {
+          ...configRef.current,
+          spaces: [...configRef.current.spaces, newSpace],
+        };
+        setSelectedId(newSpace.id);
+        await setNextConfig(nextConfig);
+      };
+
+      const updateSelectedField = async (field, value) => {
+        const currentSelected = configRef.current.spaces.find((space) => space.id === selectedId);
+        if (!currentSelected) {
+          return;
+        }
+
+        pushHistorySnapshot();
+
+        const nextSpaces = configRef.current.spaces.map((space, index) => {
+          if (space.id !== currentSelected.id) {
+            return space;
+          }
+
+          const next = { ...plugin.normalizeSpace(space, index), updatedAt: Date.now() };
+          if (field === 'name' || field === 'label') {
+            next[field] = value;
+          } else if (field === 'isFull') {
+            next.isFull = value === 'true' || value === true;
+          } else {
+            const numeric = Number(value);
+            if (Number.isNaN(numeric)) {
+              return next;
+            }
+            if (field === 'radius') next.radius = plugin.clamp(numeric, 0, 40);
+          }
+          return plugin.normalizeSpace(next, index);
+        });
+
+        await setNextConfig({ ...configRef.current, spaces: nextSpaces });
+      };
+
+      const toggleSelectedStatus = async () => {
+        if (!selectedSpace) {
+          return;
+        }
+        await updateSelectedField('isFull', !selectedSpace.isFull);
+      };
+
+      const deleteSelectedSpace = async () => {
+        if (!selectedSpace) {
+          return;
+        }
+
+        pushHistorySnapshot();
+        const nextSpaces = configRef.current.spaces.filter((space) => space.id !== selectedSpace.id);
+        setSelectedId(nextSpaces[0] ? nextSpaces[0].id : null);
+        await setNextConfig({ ...configRef.current, spaces: nextSpaces });
+      };
+
+      const duplicateSelectedSpace = () => {
+        const currentSelected = configRef.current.spaces.find((space) => space.id === selectedId);
+        if (!currentSelected) {
+          return;
+        }
+
+        clipboardRef.current = { ...currentSelected };
+      };
+
+      const pasteCopiedSpace = async () => {
+        if (!clipboardRef.current) {
+          return;
+        }
+
+        pushHistorySnapshot();
+        const copied = clipboardRef.current;
+        const count = configRef.current.spaces.length + 1;
+        const pastedSpace = plugin.normalizeSpace({
+          ...copied,
+          id: `space_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          x: copied.x + 2,
+          y: copied.y + 2,
+          name: `${copied.name || 'space'}-copy`,
+          updatedAt: Date.now(),
+        }, count - 1);
+
+        const nextConfig = {
+          ...configRef.current,
+          spaces: [...configRef.current.spaces, pastedSpace],
+        };
+
+        setSelectedId(pastedSpace.id);
+        await setNextConfig(nextConfig);
+      };
+
+      const getAngleDifference = (firstAngle, secondAngle) => {
+        const raw = ((firstAngle - secondAngle + 540) % 360) - 180;
+        return Math.abs(raw);
+      };
+
+      const alignSelectedSpace = async () => {
+        const currentSelected = configRef.current.spaces.find((space) => space.id === selectedId);
+        if (!currentSelected) {
+          return;
+        }
+
+        const currentCenterX = currentSelected.x + (currentSelected.width / 2);
+        const currentCenterY = currentSelected.y + (currentSelected.height / 2);
+        const candidates = configRef.current.spaces
+          .filter((space) => space.id !== currentSelected.id)
+          .map((space) => {
+            const angle = space.angle || 0;
+            const angleDiff = getAngleDifference(angle, currentSelected.angle || 0);
+            if (angleDiff > 8) {
+              return null;
+            }
+
+            const angleRad = angle * Math.PI / 180;
+            const axisX = Math.cos(angleRad);
+            const axisY = Math.sin(angleRad);
+            const perpX = -Math.sin(angleRad);
+            const perpY = Math.cos(angleRad);
+            const otherCenterX = space.x + (space.width / 2);
+            const otherCenterY = space.y + (space.height / 2);
+            const deltaX = currentCenterX - otherCenterX;
+            const deltaY = currentCenterY - otherCenterY;
+            const perpendicularOffset = (deltaX * perpX) + (deltaY * perpY);
+            const parallelOffset = (deltaX * axisX) + (deltaY * axisY);
+
+            return {
+              space,
+              perpendicularOffset,
+              parallelOffset,
+            };
+          })
+          .filter(Boolean)
+          .sort((a, b) => Math.abs(a.perpendicularOffset) - Math.abs(b.perpendicularOffset));
+
+        const bestMatch = candidates[0];
+        if (!bestMatch) {
+          return;
+        }
+
+        pushHistorySnapshot();
+        const angleRad = (bestMatch.space.angle || 0) * Math.PI / 180;
+        const perpX = -Math.sin(angleRad);
+        const perpY = Math.cos(angleRad);
+        const nextCenterX = currentCenterX - (bestMatch.perpendicularOffset * perpX);
+        const nextCenterY = currentCenterY - (bestMatch.perpendicularOffset * perpY);
+
+        const nextSpaces = configRef.current.spaces.map((space, index) => {
+          if (space.id !== currentSelected.id) {
+            return space;
+          }
+
+          const next = plugin.normalizeSpace({
+            ...space,
+            x: plugin.clamp(nextCenterX - (space.width / 2), 0, 100 - space.width),
+            y: plugin.clamp(nextCenterY - (space.height / 2), 0, 100 - space.height),
+            angle: bestMatch.space.angle,
+            updatedAt: Date.now(),
+          }, index);
+
+          return next;
+        });
+
+        await setNextConfig({ ...configRef.current, spaces: nextSpaces });
+      };
+
+      React.useEffect(() => {
+        const onKeyDown = (event) => {
+          if (!isAdmin) {
+            return;
+          }
+
+          const target = event.target;
+          const tagName = target && target.tagName ? String(target.tagName).toUpperCase() : '';
+          const isTypingTarget = target && (target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT');
+          if (isTypingTarget) {
+            return;
+          }
+
+          if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'c') {
+            event.preventDefault();
+            duplicateSelectedSpace();
+            return;
+          }
+
+          if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'v') {
+            event.preventDefault();
+            pasteCopiedSpace();
+            return;
+          }
+
+          if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
+            event.preventDefault();
+            undoLastChange();
+            return;
+          }
+
+          if ((event.key === 'Delete' || event.key === 'Backspace') && selectedId) {
+            event.preventDefault();
+            deleteSelectedSpace();
+          }
+        };
+
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+      }, [isAdmin, selectedId]);
+
+      const startInteraction = (space, mode, handle, event) => {
+        if (!isAdmin || !mapStageRef.current || event.button !== 0) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        pushHistorySnapshot();
+        setSelectedId(space.id);
+        const rect = mapStageRef.current.getBoundingClientRect();
+        dragRef.current = {
+          mode,
+          handle,
+          rect,
+          startX: event.clientX,
+          startY: event.clientY,
+          startSpace: { ...space },
+          centerX: rect.left + ((space.x + space.width / 2) / 100) * rect.width,
+          centerY: rect.top + ((space.y + space.height / 2) / 100) * rect.height,
+          startPointerAngle: Math.atan2(event.clientY - (rect.top + ((space.y + space.height / 2) / 100) * rect.height), event.clientX - (rect.left + ((space.x + space.width / 2) / 100) * rect.width)),
+        };
+
+        const handleMove = (moveEvent) => {
+          const drag = dragRef.current;
+          if (!drag) {
+            return;
+          }
+
+          const deltaXPercent = ((moveEvent.clientX - drag.startX) / drag.rect.width) * 100;
+          const deltaYPercent = ((moveEvent.clientY - drag.startY) / drag.rect.height) * 100;
+          const startSpace = drag.startSpace;
+          const angleRad = (startSpace.angle || 0) * Math.PI / 180;
+
+          setConfig((current) => {
+            const nextSpaces = current.spaces.map((entry, index) => {
+              if (entry.id !== startSpace.id) {
+                return entry;
+              }
+
+              let next = { ...plugin.normalizeSpace(entry, index) };
+
+              if (drag.mode === 'move') {
+                next.x = plugin.clamp(startSpace.x + deltaXPercent, 0, 100 - next.width);
+                next.y = plugin.clamp(startSpace.y + deltaYPercent, 0, 100 - next.height);
+              }
+
+              if (drag.mode === 'resize') {
+                const localDx = deltaXPercent * Math.cos(angleRad) + deltaYPercent * Math.sin(angleRad);
+                const localDy = -deltaXPercent * Math.sin(angleRad) + deltaYPercent * Math.cos(angleRad);
+                const sx = drag.handle.includes('w') ? -1 : 1;
+                const sy = drag.handle.includes('n') ? -1 : 1;
+
+                let width = plugin.clamp(startSpace.width + localDx * sx, 0.8, 40);
+                let height = plugin.clamp(startSpace.height + localDy * sy, 1.2, 40);
+                let x = startSpace.x;
+                let y = startSpace.y;
+
+                if (sx < 0) {
+                  x = startSpace.x + (startSpace.width - width);
+                }
+                if (sy < 0) {
+                  y = startSpace.y + (startSpace.height - height);
+                }
+
+                next.width = width;
+                next.height = height;
+                next.x = plugin.clamp(x, 0, 100 - width);
+                next.y = plugin.clamp(y, 0, 100 - height);
+              }
+
+              if (drag.mode === 'rotate') {
+                const currentAngle = Math.atan2(moveEvent.clientY - drag.centerY, moveEvent.clientX - drag.centerX);
+                next.angle = ((startSpace.angle || 0) + ((currentAngle - drag.startPointerAngle) * 180 / Math.PI));
+              }
+
+              next.updatedAt = Date.now();
+              return plugin.normalizeSpace(next, index);
+            });
+
+            const nextConfig = { ...current, spaces: nextSpaces };
+            configRef.current = nextConfig;
+            return nextConfig;
+          });
+        };
+
+        const handleUp = async () => {
+          document.removeEventListener('mousemove', handleMove);
+          document.removeEventListener('mouseup', handleUp);
+          dragRef.current = null;
+          await persist(configRef.current);
+        };
+
+        document.addEventListener('mousemove', handleMove);
+        document.addEventListener('mouseup', handleUp);
+      };
+
+      if (loading) {
+        return e('div', { className: 'flex h-full items-center justify-center bg-background' },
+          e('div', { className: 'text-default-500 text-sm' }, 'Loading parking spaces...')
+        );
+      }
+
+      if (error) {
+        return e('div', { className: 'flex h-full items-center justify-center bg-background p-6' },
+          e(Card, { className: 'max-w-xl border border-danger-200 bg-danger-50' },
+            e('div', { className: 'p-6' },
+              e('h2', { className: 'text-lg font-semibold text-danger' }, 'Parking plugin error'),
+              e('p', { className: 'mt-2 text-sm text-danger-700' }, error)
+            )
+          )
+        );
+      }
+
+      const renderStat = (label, value, color) => e('div', { className: 'rounded-xl border border-divider bg-background px-4 py-3' },
+        e('div', { className: 'text-[11px] uppercase tracking-[0.16em] text-default-500' }, label),
+        e('div', { className: `mt-1 text-2xl font-semibold ${color}` }, String(value))
+      );
+
+      const editorPanel = isAdmin && e(Card, { className: 'border border-divider bg-content1 shadow-sm' },
+        e('div', { className: 'flex h-full flex-col gap-4 p-4' },
+          e('div', { className: 'flex items-center justify-between gap-2' },
+            e('h2', { className: 'text-base font-semibold' }, 'Selected Space'),
+            selectedSpace && e(Badge, { color: selectedSpace.isFull ? 'danger' : 'success', variant: 'flat' }, selectedSpace.isFull ? 'Full' : 'Empty')
+          ),
+          selectedSpace
+            ? e('div', { className: 'flex flex-col gap-3' },
+                e('div', { className: 'grid grid-cols-2 gap-3' },
+                  e(Input, { label: 'Number', variant: 'bordered', value: selectedSpace.label, onValueChange: (value) => updateSelectedField('label', value) }),
+                  e(Input, { label: 'Name', variant: 'bordered', value: selectedSpace.name, onValueChange: (value) => updateSelectedField('name', value) })
+                ),
+                e(Input, { type: 'number', label: 'Corner Radius', variant: 'bordered', value: String(selectedSpace.radius), onValueChange: (value) => updateSelectedField('radius', value) }),
+                e('div', { className: 'rounded-xl border border-divider bg-background p-3 text-sm text-default-500' },
+                  'Drag the space to move it. Resize from the corners, rotate from the top handle, use Smart Align for diagonal rows, or use Cmd/Ctrl+C, Cmd/Ctrl+V, Cmd/Ctrl+Z, and Delete.'
+                ),
+                e('div', { className: 'flex flex-wrap gap-2' },
+                  e(Button, { variant: 'flat', onPress: alignSelectedSpace, isDisabled: saving }, 'Smart Align'),
+                  e(Button, { color: selectedSpace.isFull ? 'success' : 'danger', variant: 'flat', onPress: toggleSelectedStatus }, selectedSpace.isFull ? 'Mark Empty' : 'Mark Full'),
+                  e(Button, { color: 'danger', variant: 'flat', onPress: deleteSelectedSpace }, 'Delete')
+                )
+              )
+            : e('div', { className: 'rounded-xl border border-dashed border-divider p-4 text-sm text-default-500' }, 'Create a space and drag it into place.')
+        )
+      );
+
+      const listPanel = isAdmin && e(Card, { className: 'border border-divider bg-content1 shadow-sm' },
+        e('div', { className: 'flex h-full flex-col gap-3 p-4' },
+          e('div', { className: 'flex items-center justify-between gap-2' },
+            e('h2', { className: 'text-base font-semibold' }, 'Spaces'),
+            e('span', { className: 'text-xs text-default-500' }, `${config.spaces.length} items`)
+          ),
+          e('div', { className: 'max-h-[260px] overflow-auto' },
+            config.spaces.length === 0
+              ? e('div', { className: 'rounded-xl border border-dashed border-divider p-4 text-sm text-default-500' }, 'No spaces yet.')
+              : e('div', { className: 'flex flex-col gap-2' },
+                  config.spaces
+                    .slice()
+                    .sort((a, b) => String(a.label).localeCompare(String(b.label), undefined, { numeric: true }))
+                    .map((space) => e('button', {
+                      key: space.id,
+                      type: 'button',
+                      onClick: () => setSelectedId(space.id),
+                      className: `flex items-center justify-between rounded-xl border px-3 py-3 text-left transition ${space.id === selectedId ? 'border-primary bg-primary-50' : 'border-divider bg-background hover:bg-default-50'}`,
+                    },
+                      e('div', null,
+                        e('div', { className: 'font-medium' }, `Space ${space.label}`),
+                        e('div', { className: 'text-xs text-default-500' }, space.name)
+                      ),
+                      e(Badge, { color: space.isFull ? 'danger' : 'success', variant: 'flat' }, space.isFull ? 'Full' : 'Empty')
+                    ))
+                )
+          )
+        )
+      );
+
+      return e('div', { className: 'flex h-full w-full flex-col gap-4 bg-background p-4 text-foreground overflow-hidden' },
+        e(Card, { className: 'shrink-0 border border-divider bg-content1 shadow-sm' },
+          e('div', { className: 'flex flex-col gap-4 p-4' },
+            e('div', { className: 'flex flex-wrap items-start justify-between gap-4' },
+              e('div', { className: 'flex items-start gap-3' },
+                assetUrls.map && e('div', { className: 'rounded-xl bg-primary/10 p-3' },
+                  e('img', { src: assetUrls.map, alt: '', className: 'h-6 w-6 opacity-80' })
+                ),
+                e('div', null,
+                  e('div', { className: 'text-xs uppercase tracking-[0.18em] text-default-500' }, isAdmin ? 'Editor' : 'Viewer'),
+                  e('h1', { className: 'mt-1 text-2xl font-bold' }, 'Parking Spaces'),
+                  e('p', { className: 'mt-1 text-sm text-default-500' }, isAdmin ? 'Create a space, drag it, then resize or rotate it directly on the map.' : 'Live parking overview.')
+                )
+              ),
+              e('div', { className: 'grid grid-cols-3 gap-3 min-[620px]:w-auto w-full' },
+                renderStat('Total', counts.total, 'text-foreground'),
+                renderStat('Empty', counts.available, 'text-success'),
+                renderStat('Full', counts.occupied, 'text-danger')
+              )
+            ),
+            e('div', { className: 'flex flex-wrap items-center gap-2' },
+              isAdmin && e(Button, { color: 'primary', onPress: () => fileInputRef.current && fileInputRef.current.click(), isDisabled: saving },
+                e('span', { className: 'flex items-center gap-2' },
+                  assetUrls.upload && e('img', { src: assetUrls.upload, alt: '', className: 'h-4 w-4' }),
+                  e('span', null, config.mapFileName ? 'Replace Map' : 'Upload Map')
+                )
+              ),
+              isAdmin && e(Button, { variant: 'flat', onPress: createNewSpace, isDisabled: saving }, 'New Space'),
+              selectedSpace && isAdmin && e(Button, { variant: 'flat', color: selectedSpace.isFull ? 'success' : 'danger', onPress: toggleSelectedStatus, isDisabled: saving }, selectedSpace.isFull ? 'Mark Empty' : 'Mark Full'),
+              e('input', { ref: fileInputRef, type: 'file', accept: 'image/*', className: 'hidden', onChange: handleMapUpload }),
+              e('div', { className: 'ml-auto text-xs text-default-500' }, config.mapMeta && config.mapMeta.originalName ? config.mapMeta.originalName : 'No map uploaded')
+            )
+          )
+        ),
+        e('div', { className: `grid min-h-0 flex-1 gap-4 ${isAdmin ? 'xl:grid-cols-[minmax(0,1fr)_280px]' : 'grid-cols-1'}` },
+          e(Card, { className: 'min-h-0 border border-divider bg-content1 shadow-sm' },
+            e('div', { className: 'flex h-full flex-col p-4' },
+              e('div', { className: 'mb-3 flex items-center justify-between gap-2 text-sm text-default-500' },
+                e('span', null, isAdmin ? 'Move, resize, and rotate directly on the map.' : 'Current parking layout'),
+                selectedSpace && isAdmin && e('span', null, `Selected: ${selectedSpace.label}`)
+              ),
+              e('div', {
+                ref: mapStageRef,
+                className: 'relative min-h-0 flex-1 overflow-auto rounded-2xl border border-divider bg-default-100 p-2',
+              },
+                e('div', { className: `relative w-full ${isAdmin ? 'min-h-[720px]' : 'min-h-[860px]'}` },
+                  config.mapUrl
+                    ? e('img', { src: config.mapUrl, alt: 'Parking map', className: 'absolute inset-0 h-full w-full object-contain select-none pointer-events-none', draggable: false })
+                    : e('div', { className: 'absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-default-500' }, isAdmin ? 'Upload a map image to begin.' : 'Parking map is not available yet.'),
+                  config.spaces.map((space) => {
+                    const selected = space.id === selectedId;
+                    const handleBase = 'absolute h-3 w-3 rounded-full border-2 border-white bg-primary shadow';
+                    return e('div', {
+                      key: space.id,
+                      className: 'absolute',
+                      style: {
+                        left: `${space.x}%`,
+                        top: `${space.y}%`,
+                        width: `${space.width}%`,
+                        height: `${space.height}%`,
+                        transform: `rotate(${space.angle}deg)`,
+                        zIndex: selected ? 20 : 10,
+                      },
+                    },
+                      e('button', {
+                        type: 'button',
+                        'data-space-id': space.id,
+                        onClick: (event) => {
+                          event.stopPropagation();
+                          setSelectedId(space.id);
+                        },
+                        onMouseDown: (event) => startInteraction(space, 'move', '', event),
+                        className: `absolute inset-0 border-2 shadow-lg transition ${selected ? 'ring-2 ring-primary ring-offset-2 ring-offset-content1' : ''} ${space.isFull ? 'bg-danger border-danger-300' : 'bg-success border-success-300'}`,
+                        style: { borderRadius: `${space.radius}px`, cursor: isAdmin ? 'grab' : 'pointer' },
+                        title: space.name,
+                      }),
+                      e('div', { className: 'pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[115%]' },
+                        e('div', { className: `rounded-full px-2 py-1 text-[11px] font-bold shadow-sm ${space.isFull ? 'bg-danger text-white' : 'border border-divider bg-content1 text-foreground'}` }, space.label)
+                      ),
+                      isAdmin && selected && e('div', null,
+                        e('button', { type: 'button', className: `${handleBase} -left-1.5 -top-1.5 cursor-nwse-resize`, onMouseDown: (event) => startInteraction(space, 'resize', 'nw', event) }),
+                        e('button', { type: 'button', className: `${handleBase} -right-1.5 -top-1.5 cursor-nesw-resize`, onMouseDown: (event) => startInteraction(space, 'resize', 'ne', event) }),
+                        e('button', { type: 'button', className: `${handleBase} -left-1.5 -bottom-1.5 cursor-nesw-resize`, onMouseDown: (event) => startInteraction(space, 'resize', 'sw', event) }),
+                        e('button', { type: 'button', className: `${handleBase} -right-1.5 -bottom-1.5 cursor-nwse-resize`, onMouseDown: (event) => startInteraction(space, 'resize', 'se', event) }),
+                        e('button', { type: 'button', className: 'absolute left-1/2 top-0 h-3.5 w-3.5 -translate-x-1/2 -translate-y-[190%] rounded-full border-2 border-white bg-secondary shadow cursor-grab', onMouseDown: (event) => startInteraction(space, 'rotate', 'rotate', event) })
+                      )
+                    );
+                  })
+                )
+              )
+            )
+          ),
+          isAdmin && e('div', { className: 'min-h-0 overflow-auto' },
+            e('div', { className: 'flex flex-col gap-4 pb-1' },
+              editorPanel,
+              listPanel
+            )
+          )
+        )
+      );
+    };
+
+    if (this.container !== container) {
+      if (this.root) {
+        const oldRoot = this.root;
+        setTimeout(() => oldRoot.unmount(), 0);
+        this.root = null;
+      }
+      this.container = container;
+      this.root = ReactDOMClient.createRoot(container);
+    }
+
+    this.root.render(e(App));
+  }
+
   destroy() {
-    console.log(`Destroying ${this.name}`);
-    this.isActive = false;
-    if (this.refreshInterval) {
-      clearInterval(this.refreshInterval);
-      this.refreshInterval = null;
+    if (this.root) {
+      this.root.unmount();
+      this.root = null;
+      this.container = null;
     }
   }
 }
+
+window.ParkingSpacesPlugin = ParkingSpacesPlugin;
+window.TempTestPlugin = ParkingSpacesPlugin;
+window.TempBackgroundPlugin = ParkingSpacesPlugin;
+
+export default ParkingSpacesPlugin;
