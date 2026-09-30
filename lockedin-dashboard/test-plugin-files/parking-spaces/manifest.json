@@ -1,13 +1,12 @@
 {
   "name": "parking-spaces",
-  "version": "1.0.0",
-  "author": "KAO",
-  "description": "Visual parking space fullness monitor with interactive layout",
-  "main": "core-parking-spaces.js",
-  "icon": "icon-parking-spaces.svg",
-  "permissions": ["read", "write"],
-  "dependencies": [],
-  "tags": ["parking", "monitor", "ui", "spaces"],
-  "created": "2024-01-01",
-  "updated": "2024-01-01"
+  "version": "2.0.0",
+  "author": "LockedIN Team",
+  "description": "Admin-managed parking map with draggable virtual spaces and external status update endpoints.",
+  "main": "core.js",
+  "icon": "icon.svg",
+  "iconLight": "icon-light.svg",
+  "iconDark": "icon-dark.svg",
+  "apiEndpoints": ["getSpaces", "getMap", "updateSpaceStatus"],
+  "permissions": ["read", "write"]
 }

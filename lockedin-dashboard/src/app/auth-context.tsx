@@ -19,6 +19,7 @@ interface AuthContextType {
   username: string | null;
   userData: UserData | null;
   userId: string | null;
+  userImage: string | null;
   login: (username: string, userData: UserData, userId: string) => void; // Deprecated
   logout: () => void;
   refreshUserData: () => void; // No-op with Convex's reactive queries
@@ -32,28 +33,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { signOut } = useAuthActions();
 
   // Fetch current user data if authenticated
-  const currentUser = useQuery(api.users.currentUser);
+  const currentUser = useQuery(api.users.currentUser, isAuthenticated ? {} : "skip");
 
   // Create derived state
-  const { username, userId, userData } = useMemo(() => {
+  const { username, userId, userData, userImage } = useMemo(() => {
     if (!currentUser) {
-      return { username: null, userId: null, userData: null };
+      return { username: null, userId: null, userData: null, userImage: null };
     }
 
-    const { username, _id, ...rest } = currentUser;
+    const { username, _id, imageUrl, ...rest } = currentUser as any;
 
-    // Construct userData from the rest of the properties
-    // The currentUser query already parses usrData and spreads it
     const userDataObj: UserData = {
       ...rest,
-      // Ensure specific fields are present if needed, or mapped
-      role: rest.role, // Should be present if it was in usrData
+      role: rest.role,
     };
 
     return {
       username: username || 'User',
       userId: _id,
-      userData: userDataObj
+      userData: userDataObj,
+      userImage: imageUrl || null,
     };
   }, [currentUser]);
 
@@ -79,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       username,
       userData,
       userId,
+      userImage,
       login,
       logout,
       refreshUserData,

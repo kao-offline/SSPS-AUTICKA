@@ -1,3 +1,4 @@
+import { checkAuthenticated } from "./permissions";
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
@@ -11,6 +12,8 @@ export const update_fullness = mutation({
     isFull: v.boolean(),
   },
   handler: async (ctx, args) => {
+    await checkAuthenticated(ctx);
+
     // Find the space by name
     const existingSpace = await ctx.db
       .query("spaces")
@@ -43,6 +46,8 @@ export const car_entered = mutation({
     licensePlate: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkAuthenticated(ctx);
+
     // Check if car is already in area
     const existingCar = await ctx.db
       .query("current_cars")
@@ -74,6 +79,8 @@ export const car_exited = mutation({
     licensePlate: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkAuthenticated(ctx);
+
     // Find car in current cars
     const existingCar = await ctx.db
       .query("current_cars")
@@ -106,6 +113,8 @@ export const car_exited = mutation({
 export const get_current_cars = query({
   args: {},
   handler: async (ctx) => {
+    await checkAuthenticated(ctx);
+
     return await ctx.db.query("current_cars").collect();
   },
 });
@@ -116,6 +125,8 @@ export const is_car_present = query({
     licensePlate: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkAuthenticated(ctx);
+
     const car = await ctx.db
       .query("current_cars")
       .withIndex("by_licensePlate", (q) => q.eq("licensePlate", args.licensePlate))
@@ -132,7 +143,9 @@ export const get_car_history = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    let historyQuery = ctx.db
+    await checkAuthenticated(ctx);
+
+    const historyQuery = ctx.db
       .query("car_history")
       .withIndex("by_licensePlate", (q) => q.eq("licensePlate", args.licensePlate))
       .order("desc");

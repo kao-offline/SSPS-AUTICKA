@@ -1,35 +1,46 @@
-import { QueryCtx, MutationCtx } from "./_generated/server";
+import { ConvexError } from "convex/values";
+import { ActionCtx, QueryCtx, MutationCtx, internalQuery } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { internal } from "./_generated/api";
+import { Doc } from "./_generated/dataModel";
 
-/**
- * Check if the authenticated user has the 'admin' role.
- * Throws an error if not authenticated or not an admin.
- */
-export async function checkAdmin(ctx: QueryCtx | MutationCtx) {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-        throw new Error("Unauthorized: Authentication required");
-    }
+type AuthCtx = QueryCtx | MutationCtx | ActionCtx;
 
-    const user = await ctx.db.get(userId);
-    if (!user) {
-        throw new Error("Unauthorized: User not found");
-    }
+export const currentUserForAuthorization = internalQuery({
+  args: {},
+  handler: async (ctx): Promise<Doc<"users"> | null> => {
+    const id = await getAuthUserId(ctx);
+    return id ? ctx.db.get(id) : null;
+  },
+});
 
-    // Parse usrData to check role
-    let role = "";
-    if (user.usrData) {
-        try {
-            const data = JSON.parse(user.usrData);
-            role = data.role;
-        } catch (e) {
-            console.error("Failed to parse usrData for admin check");
-        }
-    }
+export function userMetadata(user: Doc<"users">): { role?: string; plugins?: string; isActive?: boolean } {
+  try { return JSON.parse(user.usrData || "{}"); } catch { return {}; }
+}
 
-    if (role !== "admin") {
-        throw new Error("Unauthorized: Admin privileges required");
-    }
+export async function checkAuthenticated(ctx: AuthCtx): Promise<Doc<"users">> {
+  const id = await getAuthUserId(ctx);
+  const user = id
+    ? ("db" in ctx ? await ctx.db.get(id) : await ctx.runQuery(internal.permissions.currentUserForAuthorization, {}))
+    : null;
+  if (!user) throw new ConvexError("Unauthorized: Authentication required");
+  if (user.isApproved === false || userMetadata(user).isActive === false) {
+    throw new ConvexError("Forbidden: Account is not approved or active");
+  }
+  return user;
+}
 
-    return user;
+export async function checkAdmin(ctx: AuthCtx): Promise<Doc<"users">> {
+  const user = await checkAuthenticated(ctx);
+  if (userMetadata(user).role !== "admin") throw new ConvexError("Forbidden: Admin privileges required");
+  return user;
+}
+
+export async function checkPluginAccess(ctx: AuthCtx, pluginName: string) {
+  const user = await checkAuthenticated(ctx);
+  const data = userMetadata(user);
+  if (data.role !== "admin" && !data.plugins?.split(",").map(name => name.trim()).includes(pluginName)) {
+    throw new ConvexError("Forbidden: Plugin is not assigned to this user");
+  }
+  return user;
 }

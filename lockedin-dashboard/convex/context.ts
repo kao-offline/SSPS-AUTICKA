@@ -1,32 +1,14 @@
-import { mutation, action, query, internalMutation, internalQuery } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { checkAuthenticated, checkAdmin } from "./permissions";
+import { mutation, action, query, internalAction, internalMutation, internalQuery } from "./_generated/server";
+import { api, internal } from "./_generated/api";
 import { v } from "convex/values";
 import bcrypt from "bcryptjs";
 
 // Upload URL for profile pictures
 export const generateUploadUrl = mutation(async (ctx) => {
+    await checkAuthenticated(ctx);
+
   return await ctx.storage.generateUploadUrl();
-});
-
-// Action to hash password (can use bcryptjs here)
-export const hashPassword = action({
-  args: {
-    password: v.string(),
-  },
-  handler: async (ctx, args) => {
-    return await bcrypt.hash(args.password, 10);
-  },
-});
-
-// Action to compare password (can use bcryptjs here)
-export const comparePassword = action({
-  args: {
-    password: v.string(),
-    hash: v.string(),
-  },
-  handler: async (ctx, args) => {
-    return await bcrypt.compare(args.password, args.hash);
-  },
 });
 
 // Action to create user (combines hashing and database insertion)
@@ -38,12 +20,20 @@ export const insertAuthUser = internalMutation({
     usrData: v.string(),
   },
   handler: async (ctx, args) => {
+    const username = args.username.trim().toLowerCase();
+    if (!username || username.length > 100) throw new Error("Invalid username");
+    const existing = await ctx.db.query("users").withIndex("username", q => q.eq("username", username)).first();
+    const existingAccount = await ctx.db.query("authAccounts").withIndex("providerAndAccountId", q => q.eq("provider", "password").eq("providerAccountId", username)).first();
+    if (existing || existingAccount) throw new Error("Username already exists");
+    JSON.parse(args.usrData);
     // Create user in Convex Auth users table
     const userId = await ctx.db.insert("users", {
-      email: args.username, // Store username in email field
-      name: args.username,
-      username: args.username,
+      email: username, // Store username in email field
+      name: username,
+      username: username,
       usrData: args.usrData,
+      isApproved: true,
+      createdAt: Date.now(),
       // Don't explicitly set undefined fields - let Convex handle optional fields
     });
 
@@ -51,7 +41,7 @@ export const insertAuthUser = internalMutation({
     await ctx.db.insert("authAccounts", {
       userId,
       provider: "password",
-      providerAccountId: args.username,
+      providerAccountId: username,
       secret: args.hashPassword,
     });
 
@@ -66,10 +56,14 @@ export const createUserAction: any = action({
     usrData: v.string(),
   },
   handler: async (ctx, args) => {
-    const { username, password, usrData } = args;
+    await checkAdmin(ctx);
+
+    const { password, usrData } = args;
+    const username = args.username.trim().toLowerCase();
+    if (password.length < 8) throw new Error("Password must have at least 8 characters");
 
     // Check if user already exists
-    const existingUser = await ctx.runQuery((internal as any).context.getUserByUsername, { username });
+    const existingUser = await ctx.runQuery(api.context.getUserByUsername, { username });
     if (existingUser) {
       throw new Error("User already exists");
     }
@@ -78,7 +72,7 @@ export const createUserAction: any = action({
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Insert user into database
-    const userId = await ctx.runMutation((internal as any).context.insertAuthUser, {
+    const userId = await ctx.runMutation(internal.context.insertAuthUser, {
       username,
       hashPassword: hashedPassword,
       usrData,
@@ -95,6 +89,8 @@ export const getUserByUsername = query({
     username: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkAdmin(ctx);
+
     return await ctx.db
       .query("users")
       .withIndex("username", (q) => q.eq("username", args.username))
@@ -102,56 +98,30 @@ export const getUserByUsername = query({
   },
 });
 
-// Action to login user (combines comparison and database query)
-// Action to login user (combines comparison and database query)
-export const loginUserAction: any = action({
-  args: {
-    username: v.string(),
-    password: v.string(),
-  },
-  handler: async (ctx, args) => {
-    // This is legacy login, Convex Auth should be used instead.
-    // However, for admin impersonation or checks, this might be used.
-    // We need to fetch the password hash from authAccounts.
-
-    // Note: This logic is complex because password isn't on user object anymore.
-    // Simplification: Deprecate this action.
-    throw new Error("loginUserAction is deprecated. Use Convex Auth signIn.");
-  },
-});
-
-// Legacy mutations for backward compatibility (if needed)
-export const createUser = mutation({
-  args: {
-    username: v.string(),
-    password: v.string(),
-    usrData: v.string(),
-  },
-  handler: async (ctx, args) => {
-    // This will throw an error due to bcryptjs setTimeout issue
-    // Use createUserAction instead
-    throw new Error("Use createUserAction instead of createUser mutation");
-  },
-});
-
-export const loginUser = mutation({
-  args: {
-    username: v.string(),
-    password: v.string(),
-  },
-  handler: async (ctx, args) => {
-    // This will throw an error due to bcryptjs setTimeout issue
-    // Use loginUserAction instead
-    throw new Error("Use loginUserAction instead of loginUser mutation");
-  },
-});
-
-// Query to get all users (for admin)
-// Query to get all users (for admin)
+// Query to get all users (for admin) — resolves image storage IDs to real URLs
 export const getAllUsers = query({
   args: {},
   handler: async (ctx) => {
-    return await ctx.db.query("users").collect();
+    await checkAdmin(ctx);
+
+    const users = await ctx.db.query("users").collect();
+    return await Promise.all(
+      users.map(async (user) => {
+        let imageUrl: string | null = null;
+        if (user.image) {
+          if ((user.image as string).startsWith("http")) {
+            imageUrl = user.image as string;
+          } else {
+            try {
+              imageUrl = await ctx.storage.getUrl(user.image as any);
+            } catch {
+              imageUrl = null;
+            }
+          }
+        }
+        return { ...user, imageUrl };
+      })
+    );
   },
 });
 
@@ -161,16 +131,18 @@ export const deleteUserAction = action({
     userId: v.string(),
   },
   handler: async (ctx, args) => {
-    await ctx.runMutation((internal as any).context.deleteUser, { userId: args.userId });
+    await checkAdmin(ctx);
+
+    await ctx.runMutation(internal.context.deleteUser, { userId: args.userId });
   },
 });
 
 // NUCLEAR: Clear ALL authentication data
-export const clearAllAuthDataAction = action({
+export const clearAllAuthDataAction = internalAction({
   args: {},
   handler: async (ctx) => {
     console.log("🚨 CLEARING ALL AUTHENTICATION DATA");
-    return await ctx.runMutation((internal as any).context.clearAllAuthData);
+    return await ctx.runMutation(internal.context.clearAllAuthData);
   },
 });
 
@@ -227,11 +199,11 @@ export const clearAllAuthData = internalMutation({
 });
 
 // NUCLEAR: Clear ALL application + authentication data
-export const clearAllDataAction = action({
+export const clearAllDataAction = internalAction({
   args: {},
   handler: async (ctx) => {
     console.log("🚨 CLEARING ALL DATABASE DATA");
-    return await ctx.runMutation((internal as any).context.clearAllData);
+    return await ctx.runMutation(internal.context.clearAllData);
   },
 });
 
@@ -276,7 +248,7 @@ export const clearAllData = internalMutation({
 
 // Mutation to delete user (for admin)
 // Mutation to delete user (for admin)
-export const deleteUser = mutation({
+export const deleteUser = internalMutation({
   args: {
     userId: v.id("users"),
   },
@@ -310,6 +282,8 @@ export const updateUserAction = action({
     usrData: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkAdmin(ctx);
+
     const { userId, username, password, image, usrData } = args;
 
     const updateData: any = { usrData };
@@ -326,10 +300,11 @@ export const updateUserAction = action({
 
     let hashedPassword;
     if (password) {
+      if (password.length < 8) throw new Error("Password must have at least 8 characters");
       hashedPassword = await bcrypt.hash(password, 10);
     }
 
-    await ctx.runMutation((internal as any).context.updateUser, {
+    await ctx.runMutation(internal.context.updateUser, {
       userId,
       ...updateData,
       newHashPassword: hashedPassword
@@ -339,7 +314,7 @@ export const updateUserAction = action({
 
 // Mutation to update user (for admin)
 // Mutation to update user (for admin)
-export const updateUser = mutation({
+export const updateUser = internalMutation({
   args: {
     userId: v.string(), // string for flexibility
     username: v.optional(v.string()),
@@ -351,6 +326,21 @@ export const updateUser = mutation({
   },
   handler: async (ctx, args) => {
     const { userId, newHashPassword, ...updateData } = args;
+    const id = ctx.db.normalizeId("users", userId);
+    if (!id) throw new Error("User not found");
+    const user = await ctx.db.get(id);
+    if (!user) throw new Error("User not found");
+    if (updateData.username) {
+      const username = updateData.username.trim().toLowerCase();
+      if (!username || username.length > 100) throw new Error("Invalid username");
+      const duplicate = await ctx.db.query("users").withIndex("username", q => q.eq("username", username)).first();
+      const collision = await ctx.db.query("authAccounts").withIndex("providerAndAccountId", q => q.eq("provider", "password").eq("providerAccountId", username)).first();
+      if ((duplicate && duplicate._id !== id) || (collision && collision.userId !== id)) throw new Error("Username already exists");
+      updateData.username = username; updateData.email = username; updateData.name = username;
+      const accounts = await ctx.db.query("authAccounts").withIndex("userIdAndProvider", q => q.eq("userId", id).eq("provider", "password")).collect();
+      for (const account of accounts) await ctx.db.patch(account._id, { providerAccountId: username });
+    }
+    JSON.parse(updateData.usrData);
 
     // Update user record
     await ctx.db.patch(userId as any, updateData);
@@ -378,10 +368,23 @@ export const uploadPluginAction: any = action({
     description: v.optional(v.string()),
     manifestFile: v.optional(v.string()), // base64 encoded
     coreFile: v.optional(v.string()), // base64 encoded
-    iconFile: v.optional(v.string()), // base64 encoded
+    iconFile: v.optional(v.string()), // base64 encoded (legacy)
+    iconLightFile: v.optional(v.string()), // base64 encoded
+    iconDarkFile: v.optional(v.string()), // base64 encoded
+    assets: v.optional(v.array(v.object({
+      name: v.string(),
+      content: v.string(), // base64 encoded
+      mimeType: v.optional(v.string())
+    }))),
   },
   handler: async (ctx, args) => {
-    const { pluginName, author, version, description, manifestFile, coreFile, iconFile } = args;
+    await checkAdmin(ctx);
+
+    const {
+      pluginName, author, version, description,
+      manifestFile, coreFile, iconFile,
+      iconLightFile, iconDarkFile, assets
+    } = args;
 
     // Validate file formats for uploaded files
     if (manifestFile) {
@@ -405,8 +408,22 @@ export const uploadPluginAction: any = action({
       }
     }
 
+    if (iconLightFile) {
+      const iconValid = validateIconFile(iconLightFile);
+      if (!iconValid) {
+        throw new Error("Invalid light icon file format. Must be valid SVG.");
+      }
+    }
+
+    if (iconDarkFile) {
+      const iconValid = validateIconFile(iconDarkFile);
+      if (!iconValid) {
+        throw new Error("Invalid dark icon file format. Must be valid SVG.");
+      }
+    }
+
     // Check if plugin already exists
-    const existingPlugin = await ctx.runQuery((internal as any).context.getPluginByName, { name: pluginName });
+    const existingPlugin = await ctx.runQuery(api.context.getPluginByName, { name: pluginName });
 
     // Parse manifest to extract apiEndpoints
     let apiEndpoints: string[] = [];
@@ -427,6 +444,8 @@ export const uploadPluginAction: any = action({
     let manifestFileId: any;
     let coreFileId: any;
     let iconFileId: any;
+    let iconLightFileId: any;
+    let iconDarkFileId: any;
 
     try {
       if (manifestFile) {
@@ -446,6 +465,20 @@ export const uploadPluginAction: any = action({
       if (iconFile) {
         const iconBytes = Uint8Array.from(atob(iconFile), c => c.charCodeAt(0));
         iconFileId = await ctx.storage.store(
+          new Blob([iconBytes], { type: 'image/svg+xml' })
+        );
+      }
+
+      if (iconLightFile) {
+        const iconBytes = Uint8Array.from(atob(iconLightFile), c => c.charCodeAt(0));
+        iconLightFileId = await ctx.storage.store(
+          new Blob([iconBytes], { type: 'image/svg+xml' })
+        );
+      }
+
+      if (iconDarkFile) {
+        const iconBytes = Uint8Array.from(atob(iconDarkFile), c => c.charCodeAt(0));
+        iconDarkFileId = await ctx.storage.store(
           new Blob([iconBytes], { type: 'image/svg+xml' })
         );
       }
@@ -486,14 +519,28 @@ export const uploadPluginAction: any = action({
         updateData.iconFileId = iconFileId;
       }
 
-      await ctx.runMutation((internal as any).context.updatePlugin, updateData);
+      if (iconLightFile) {
+        if (existingPlugin.iconLightFileId) {
+          await ctx.storage.delete(existingPlugin.iconLightFileId);
+        }
+        updateData.iconLightFileId = iconLightFileId;
+      }
+
+      if (iconDarkFile) {
+        if (existingPlugin.iconDarkFileId) {
+          await ctx.storage.delete(existingPlugin.iconDarkFileId);
+        }
+        updateData.iconDarkFileId = iconDarkFileId;
+      }
+
+      await ctx.runMutation(internal.context.updatePlugin, updateData);
     } else {
       // Create new plugin - require manifest and core files
       if (!manifestFile || !coreFile) {
         throw new Error("Manifest and core files are required for new plugins.");
       }
 
-      await ctx.runMutation((internal as any).context.createPlugin, {
+      await ctx.runMutation(internal.context.createPlugin, {
         name: pluginName,
         author,
         version,
@@ -501,17 +548,54 @@ export const uploadPluginAction: any = action({
         manifestFileId,
         coreFileId,
         iconFileId,
+        iconLightFileId,
+        iconDarkFileId,
         uploadDate: Date.now(),
         isActive: true,
         apiEndpoints,
       });
     }
 
+    // Handle Assets
+    if (assets !== undefined) {
+      // Treat the incoming asset list as the source of truth for updates.
+      if (existingPlugin) {
+        const oldAssets = await ctx.runQuery(internal.context.getPluginAssets, { pluginName });
+        for (const asset of oldAssets) {
+          await ctx.storage.delete(asset.fileId);
+          await ctx.runMutation(internal.context.deletePluginFile, { fileId: asset._id });
+        }
+      }
+
+      // Upload new assets, if any were provided.
+      for (const asset of assets) {
+        try {
+          const assetBytes = Uint8Array.from(atob(asset.content), c => c.charCodeAt(0));
+          const mimeType = asset.mimeType || 'application/octet-stream';
+          const fileId = await ctx.storage.store(
+            new Blob([assetBytes], { type: mimeType })
+          );
+
+          await ctx.runMutation(internal.context.createPluginFile, {
+            pluginName,
+            fileName: asset.name,
+            fileId,
+            mimeType,
+            size: assetBytes.length,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+        } catch (err) {
+          console.error(`Failed to upload asset ${asset.name}:`, err);
+        }
+      }
+    }
+
     return { success: true, message: existingPlugin ? 'Plugin updated successfully' : 'Plugin created successfully' };
   },
 });
 
-export const createPlugin = mutation({
+export const createPlugin = internalMutation({
   args: {
     name: v.string(),
     author: v.string(),
@@ -520,12 +604,16 @@ export const createPlugin = mutation({
     manifestFileId: v.id("_storage"),
     coreFileId: v.id("_storage"),
     iconFileId: v.optional(v.id("_storage")),
+    iconLightFileId: v.optional(v.id("_storage")),
+    iconDarkFileId: v.optional(v.id("_storage")),
     uploadDate: v.number(),
     isActive: v.boolean(),
     apiEndpoints: v.optional(v.array(v.string())),
+    _syncToken: v.optional(v.string()), // Dummy field to force sync if needed
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("plugins", args);
+    const { _syncToken, ...data } = args;
+    return await ctx.db.insert("plugins", data as any);
   },
 });
 
@@ -534,6 +622,8 @@ export const getPluginByName = query({
     name: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkAuthenticated(ctx);
+
     return await ctx.db
       .query("plugins")
       .withIndex("by_name", (q) => q.eq("name", args.name))
@@ -544,6 +634,8 @@ export const getPluginByName = query({
 export const getAllPlugins = query({
   args: {},
   handler: async (ctx) => {
+    await checkAuthenticated(ctx);
+
     return await ctx.db.query("plugins").collect();
   },
 });
@@ -554,6 +646,8 @@ export const getPluginsByNames = query({
     pluginNames: v.array(v.string()),
   },
   handler: async (ctx, args) => {
+    await checkAuthenticated(ctx);
+
     const plugins = [];
     for (const name of args.pluginNames) {
       const plugin = await ctx.db
@@ -574,6 +668,8 @@ export const getPluginFiles = query({
     pluginName: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkAuthenticated(ctx);
+
     const plugin = await ctx.db
       .query("plugins")
       .withIndex("by_name", (q) => q.eq("name", args.pluginName))
@@ -587,6 +683,8 @@ export const getPluginFiles = query({
     const manifestUrl = await ctx.storage.getUrl(plugin.manifestFileId);
     const coreUrl = await ctx.storage.getUrl(plugin.coreFileId);
     const iconUrl = plugin.iconFileId ? await ctx.storage.getUrl(plugin.iconFileId) : null;
+    const iconLightUrl = plugin.iconLightFileId ? await ctx.storage.getUrl(plugin.iconLightFileId) : null;
+    const iconDarkUrl = plugin.iconDarkFileId ? await ctx.storage.getUrl(plugin.iconDarkFileId) : null;
 
     return {
       plugin,
@@ -594,6 +692,8 @@ export const getPluginFiles = query({
         manifestUrl,
         coreUrl,
         iconUrl,
+        iconLightUrl,
+        iconDarkUrl,
       }
     };
   },
@@ -605,7 +705,9 @@ export const cleanupPluginFromAllUsers = action({
     pluginName: v.string(),
   },
   handler: async (ctx, args) => {
-    const allUsers = await ctx.runQuery((internal as any).context.getAllUsers);
+    await checkAdmin(ctx);
+
+    const allUsers = await ctx.runQuery(api.context.getAllUsers);
     let usersUpdated = 0;
 
     for (const user of allUsers) {
@@ -619,7 +721,7 @@ export const cleanupPluginFromAllUsers = action({
         // Only update if the plugin was actually in the user's list
         if (updatedPlugins.length !== currentPlugins.length) {
           usrData.plugins = updatedPlugins.join(',');
-          await ctx.runMutation((internal as any).context.updateUser, {
+          await ctx.runMutation(internal.context.updateUser, {
             userId: user._id as string,
             usrData: JSON.stringify(usrData)
           });
@@ -641,7 +743,9 @@ export const deletePluginAction: any = action({
     pluginName: v.string(),
   },
   handler: async (ctx, args) => {
-    const plugin = await ctx.runQuery((internal as any).context.getPluginByName, { name: args.pluginName });
+    await checkAdmin(ctx);
+
+    const plugin = await ctx.runQuery(api.context.getPluginByName, { name: args.pluginName });
 
     if (!plugin) {
       throw new Error("Plugin not found");
@@ -650,7 +754,7 @@ export const deletePluginAction: any = action({
     // Clean up plugin references from all users
     let cleanupResult;
     try {
-      cleanupResult = await ctx.runAction((internal as any).context.cleanupPluginFromAllUsers, {
+      cleanupResult = await ctx.runAction(api.context.cleanupPluginFromAllUsers, {
         pluginName: args.pluginName
       });
     } catch (error) {
@@ -667,9 +771,21 @@ export const deletePluginAction: any = action({
     if (plugin.iconFileId) {
       await ctx.storage.delete(plugin.iconFileId);
     }
+    if (plugin.iconLightFileId) {
+      await ctx.storage.delete(plugin.iconLightFileId);
+    }
+    if (plugin.iconDarkFileId) {
+      await ctx.storage.delete(plugin.iconDarkFileId);
+    }
+
+    const pluginAssets = await ctx.runQuery(internal.context.getPluginAssets, { pluginName: args.pluginName });
+    for (const asset of pluginAssets) {
+      await ctx.storage.delete(asset.fileId);
+      await ctx.runMutation(internal.context.deletePluginFile, { fileId: asset._id });
+    }
 
     // Delete plugin record from database
-    await ctx.runMutation((internal as any).context.deletePlugin, { pluginId: plugin._id });
+    await ctx.runMutation(api.context.deletePlugin, { pluginId: plugin._id });
 
     return {
       success: true,
@@ -680,7 +796,7 @@ export const deletePluginAction: any = action({
 });
 
 // Mutation to update plugin in database
-export const updatePlugin = mutation({
+export const updatePlugin = internalMutation({
   args: {
     pluginId: v.id("plugins"),
     author: v.string(),
@@ -689,11 +805,14 @@ export const updatePlugin = mutation({
     manifestFileId: v.optional(v.id("_storage")),
     coreFileId: v.optional(v.id("_storage")),
     iconFileId: v.optional(v.id("_storage")),
+    iconLightFileId: v.optional(v.id("_storage")),
+    iconDarkFileId: v.optional(v.id("_storage")),
     uploadDate: v.number(),
     apiEndpoints: v.optional(v.array(v.string())),
+    _syncToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { pluginId, ...updateData } = args;
+    const { pluginId, _syncToken, ...updateData } = args;
     await ctx.db.patch(pluginId, updateData);
   },
 });
@@ -704,6 +823,8 @@ export const deletePlugin = mutation({
     pluginId: v.id("plugins"),
   },
   handler: async (ctx, args) => {
+    await checkAdmin(ctx);
+
     await ctx.db.delete(args.pluginId);
   },
 });
@@ -715,7 +836,9 @@ export const addPluginToUserAction = action({
     pluginName: v.string(),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.runQuery((internal as any).context.getUserById, { userId: args.userId });
+    await checkAdmin(ctx);
+
+    const user = await ctx.runQuery(api.context.getUserById, { userId: args.userId });
     if (!user) {
       throw new Error("User not found");
     }
@@ -728,7 +851,7 @@ export const addPluginToUserAction = action({
       currentPlugins.push(args.pluginName);
       usrData.plugins = currentPlugins.join(',');
 
-      await ctx.runMutation((internal as any).context.updateUser, {
+      await ctx.runMutation(internal.context.updateUser, {
         userId: args.userId,
         usrData: JSON.stringify(usrData)
       });
@@ -745,7 +868,9 @@ export const removePluginFromUserAction = action({
     pluginName: v.string(),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.runQuery((internal as any).context.getUserById, { userId: args.userId });
+    await checkAdmin(ctx);
+
+    const user = await ctx.runQuery(api.context.getUserById, { userId: args.userId });
     if (!user) {
       throw new Error("User not found");
     }
@@ -757,7 +882,7 @@ export const removePluginFromUserAction = action({
     const updatedPlugins = currentPlugins.filter((p: string) => p !== args.pluginName);
     usrData.plugins = updatedPlugins.join(',');
 
-    await ctx.runMutation((internal as any).context.updateUser, {
+    await ctx.runMutation(internal.context.updateUser, {
       userId: args.userId,
       usrData: JSON.stringify(usrData)
     });
@@ -772,6 +897,8 @@ export const getUserById = query({
     userId: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkAdmin(ctx);
+
     return await ctx.db.get(args.userId as any);
   },
 });
@@ -780,43 +907,31 @@ export const getUserById = query({
 export const getPluginIconUrl = query({
   args: {
     pluginName: v.string(),
+    theme: v.optional(v.union(v.literal("light"), v.literal("dark"))),
   },
   handler: async (ctx, args) => {
+    await checkAuthenticated(ctx);
+
     const plugin = await ctx.db
       .query("plugins")
       .withIndex("by_name", (q) => q.eq("name", args.pluginName))
       .first();
 
-    if (!plugin || !plugin.iconFileId) {
-      return null;
+    if (!plugin) return null;
+
+    // Try to get theme-specific icon first
+    if (args.theme === 'light' && plugin.iconLightFileId) {
+      return await ctx.storage.getUrl(plugin.iconLightFileId);
+    }
+    if (args.theme === 'dark' && plugin.iconDarkFileId) {
+      return await ctx.storage.getUrl(plugin.iconDarkFileId);
     }
 
-    return await ctx.storage.getUrl(plugin.iconFileId);
-  },
-});
+    // Fallback to legacy icon or any available theme icon
+    const iconId = plugin.iconFileId || plugin.iconLightFileId || plugin.iconDarkFileId;
+    if (!iconId) return null;
 
-// Test action to debug base64 encoding
-export const testBase64Action = action({
-  args: {
-    base64Content: v.string(),
-  },
-  handler: async (ctx, args) => {
-    console.log("=== TEST BASE64 ACTION ===");
-    console.log("Input length:", args.base64Content.length);
-    console.log("Input preview:", args.base64Content.substring(0, 100));
-
-    try {
-      const decoded = atob(args.base64Content);
-      console.log("Decoded content:", decoded);
-
-      const parsed = JSON.parse(decoded);
-      console.log("Parsed JSON:", parsed);
-
-      return { success: true, decoded, parsed };
-    } catch (error) {
-      console.log("Error:", error);
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-    }
+    return await ctx.storage.getUrl(iconId);
   },
 });
 
@@ -904,6 +1019,8 @@ function validateIconFile(base64Content: string): boolean {
 export const getAllSpaces = query({
   args: {},
   handler: async (ctx) => {
+    await checkAuthenticated(ctx);
+
     return await ctx.db.query("spaces").collect();
   },
 });
@@ -913,6 +1030,8 @@ export const getSpaceByName = query({
     spaceName: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkAuthenticated(ctx);
+
     return await ctx.db
       .query("spaces")
       .withIndex("by_spaceName", (q) => q.eq("spaceName", args.spaceName))
@@ -926,6 +1045,8 @@ export const updateSpaceStatus = mutation({
     isFull: v.boolean(),
   },
   handler: async (ctx, args) => {
+    await checkAdmin(ctx);
+
     const existingSpace = await ctx.db
       .query("spaces")
       .withIndex("by_spaceName", (q) => q.eq("spaceName", args.spaceName))
@@ -946,100 +1067,10 @@ export const createSpace = mutation({
     isFull: v.boolean(),
   },
   handler: async (ctx, args) => {
+    await checkAdmin(ctx);
+
     return await ctx.db.insert("spaces", args);
   },
-});
-
-// DEBUG: Query to see all authAccounts
-export const debugGetAllAuthAccounts = query({
-  args: {},
-  handler: async (ctx) => {
-    const accounts = await ctx.db.query("authAccounts").collect();
-    return accounts.map(acc => ({
-      _id: acc._id,
-      userId: acc.userId,
-      provider: acc.provider,
-      providerAccountId: acc.providerAccountId,
-      secretLength: acc.secret ? acc.secret.length : 0,
-      secretPrefix: acc.secret ? acc.secret.substring(0, 20) : "NO SECRET"
-    }));
-  }
-});
-
-// DEBUG: Test password verification
-export const debugTestPasswordVerify = action({
-  args: {
-    username: v.string(),
-    password: v.string(),
-  },
-  handler: async (ctx, args) => {
-    console.log("\\n=== DEBUG TEST PASSWORD VERIFY ===");
-    console.log("Testing username:", args.username);
-    console.log("Testing password:", args.password);
-
-    // Get all users for debugging
-    const allUsers = await ctx.runQuery((internal as any).context.debugGetAllUsers);
-    console.log("Total users in DB:", allUsers.length);
-    allUsers.forEach((user: any) => {
-      console.log("  User:", { username: user.username, email: user.email, _id: user._id });
-    });
-
-    // Get all accounts for debugging
-    const allAccounts = await ctx.runQuery((internal as any).context.debugGetAllAuthAccounts);
-    console.log("Total accounts in DB:", allAccounts.length);
-    allAccounts.forEach((acc: any) => {
-      console.log("  Account:", { 
-        providerAccountId: acc.providerAccountId, 
-        userId: acc.userId,
-        secretLength: acc.secretLength
-      });
-    });
-
-    // Try to find and verify
-    const account = allAccounts.find((acc: any) => acc.providerAccountId === args.username);
-    if (!account) {
-      console.log("❌ Account NOT found for username:", args.username);
-      return { 
-        success: false, 
-        error: "Account not found",
-        accounts: allAccounts
-      };
-    }
-
-    console.log("✅ Account found!");
-    console.log("Account data:", account);
-
-    // Get the full account object to test password
-    const fullAccount = await ctx.runQuery((internal as any).context.debugGetAccountById, { accountId: account._id });
-    console.log("Full account secret length:", fullAccount?.secret ? fullAccount.secret.length : "NO SECRET");
-    console.log("Full account secret prefix:", fullAccount?.secret ? fullAccount.secret.substring(0, 20) : "NO SECRET");
-
-    // Test password verification
-    try {
-      const isValid = await bcrypt.compare(args.password, fullAccount.secret);
-      console.log("Password verification result:", isValid);
-      return { 
-        success: isValid,
-        message: isValid ? "Password is correct" : "Password is incorrect",
-        accountFound: true
-      };
-    } catch (error) {
-      console.error("Password verification error:", error);
-      return { 
-        success: false, 
-        error: String(error),
-        accountFound: true
-      };
-    }
-  }
-});
-
-// DEBUG: Get all users
-export const debugGetAllUsers = query({
-  args: {},
-  handler: async (ctx) => {
-    return await ctx.db.query("users").collect();
-  }
 });
 
 // DEBUG: Get account by ID
@@ -1062,11 +1093,13 @@ export const debugGetAccountById = internalQuery({
 export const getPendingAccounts = query({
   args: {},
   handler: async (ctx) => {
+    await checkAdmin(ctx);
+
     const pending = await ctx.db
       .query("users")
       .withIndex("isApproved", (q) => q.eq("isApproved", false))
       .collect();
-    
+
     return pending.map((user) => ({
       _id: user._id,
       username: user.username || user.email,
@@ -1086,6 +1119,8 @@ export const approveAccount = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
+    await checkAdmin(ctx);
+
     const user = await ctx.db.get(args.userId);
     if (!user) {
       throw new Error("User not found");
@@ -1107,6 +1142,8 @@ export const rejectAccount = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
+    await checkAdmin(ctx);
+
     const user = await ctx.db.get(args.userId);
     if (!user) {
       throw new Error("User not found");
@@ -1120,7 +1157,7 @@ export const rejectAccount = mutation({
       .query("authAccounts")
       .withIndex("userIdAndProvider", (q) => q.eq("userId", args.userId).eq("provider", "password"))
       .first();
-    
+
     if (authAccount) {
       await ctx.db.delete(authAccount._id);
     }
@@ -1137,6 +1174,8 @@ export const getFileUrl = query({
     fileId: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkAuthenticated(ctx);
+
     try {
       const url = await ctx.storage.getUrl(args.fileId);
       return url;
@@ -1155,6 +1194,8 @@ export const removeNonExistentPlugins = mutation({
     userId: v.string(),
   },
   handler: async (ctx, args) => {
+    const caller = await checkAuthenticated(ctx); if (caller._id !== args.userId) await checkAdmin(ctx);
+
     try {
       const user = await ctx.db.get(args.userId as any) as any;
       if (!user || !user.usrData) {
@@ -1162,7 +1203,7 @@ export const removeNonExistentPlugins = mutation({
       }
 
       // Parse user data
-      let usrData = JSON.parse(user.usrData);
+      const usrData = JSON.parse(user.usrData);
       const currentPlugins = usrData.plugins ? usrData.plugins.split(',').map((p: string) => p.trim()).filter(Boolean) : [];
 
       if (currentPlugins.length === 0) {
@@ -1183,83 +1224,69 @@ export const removeNonExistentPlugins = mutation({
         await ctx.db.patch(args.userId as any, {
           usrData: JSON.stringify(usrData)
         });
-        console.log(`Removed ${removed} non-existent plugins from user ${args.userId}`);
-      }
+      console.log(`Removed ${removed} non-existent plugins from user ${args.userId}`);
+    }
 
-      return { success: true, removed, remainingPlugins: validPlugins };
-    } catch (error) {
-      console.error(`Failed to remove non-existent plugins:`, error);
-      return { success: false, error: String(error) };
+    return { success: true, removed, remainingPlugins: validPlugins };
+  } catch (error) {
+    console.error(`Failed to remove non-existent plugins:`, error);
+    return { success: false, error: String(error) };
     }
   },
 });
 
+// Plugin File/Asset Management Helpers
+export const createPluginFile = internalMutation({
+  args: {
+    pluginName: v.string(),
+    fileName: v.string(),
+    fileId: v.id("_storage"),
+    mimeType: v.string(),
+    size: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("pluginFiles", args);
+  },
+});
+
+export const deletePluginFile = internalMutation({
+  args: { fileId: v.id("pluginFiles") },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.fileId);
+  },
+});
+
+export const getPluginAssets = internalQuery({
+  args: { pluginName: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("pluginFiles")
+      .withIndex("by_plugin", (q) => q.eq("pluginName", args.pluginName))
+      .collect();
+  },
+});
+
 /**
- * Sync plugin endpoints from manifests
- * This action reads each plugin's manifest and updates apiEndpoints in the database
+ * Public query to get a specific asset URL for a plugin
  */
-export const syncPluginEndpoints = action({
-  args: {},
-  handler: async (ctx) => {
-    try {
-      const plugins = await ctx.runQuery((internal as any).context.getAllPlugins);
-      let updated = 0;
-      let skipped = 0;
+export const getPluginAssetUrl = query({
+  args: {
+    pluginName: v.string(),
+    assetName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await checkAuthenticated(ctx);
 
-      for (const plugin of plugins) {
-        try {
-          // Get manifest content
-          const manifestUrl = await ctx.storage.getUrl(plugin.manifestFileId);
-          if (!manifestUrl) {
-            console.warn(`No manifest URL for plugin: ${plugin.name}`);
-            skipped++;
-            continue;
-          }
+    const file = await ctx.db
+      .query("pluginFiles")
+      .withIndex("by_plugin_and_name", (q) =>
+        q.eq("pluginName", args.pluginName).eq("fileName", args.assetName)
+      )
+      .first();
 
-          const manifestResponse = await fetch(manifestUrl);
-          const manifestContent = await manifestResponse.text();
-          const manifest = JSON.parse(manifestContent);
-          const apiEndpoints = manifest.apiEndpoints || [];
-
-          // Check if endpoints need updating
-          const currentEndpoints = plugin.apiEndpoints || [];
-          if (JSON.stringify(currentEndpoints.sort()) === JSON.stringify(apiEndpoints.sort())) {
-            console.log(`Plugin ${plugin.name} endpoints already up to date`);
-            skipped++;
-            continue;
-          }
-
-          // Update plugin with endpoints
-          await ctx.runMutation((internal as any).context.updatePlugin, {
-            pluginId: plugin._id,
-            author: plugin.author,
-            version: plugin.version,
-            description: plugin.description,
-            uploadDate: plugin.uploadDate,
-            apiEndpoints,
-          });
-
-          console.log(`Updated ${plugin.name} with ${apiEndpoints.length} endpoints`);
-          updated++;
-        } catch (error) {
-          console.error(`Failed to sync endpoints for ${plugin.name}:`, error);
-          skipped++;
-        }
-      }
-
-      return { 
-        success: true, 
-        updated, 
-        skipped, 
-        total: plugins.length,
-        message: `Synced ${updated} plugins, skipped ${skipped}` 
-      };
-    } catch (error) {
-      return { 
-        success: false, 
-        error: String(error),
-        message: 'Failed to sync plugin endpoints'
-      };
-    }
+    if (!file) return null;
+    return await ctx.storage.getUrl(file.fileId);
   },
 });

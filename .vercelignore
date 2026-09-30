@@ -1,0 +1,16 @@
+.agents
+.codex
+TEMP*
+data-server
+**/node_modules
+**/.next
+**/out
+**/.env*
+**/*.pem
+**/certs
+**/.audit*
+**/audit-*.log
+lockedin-dashboard/apply-keys.js
+lockedin-dashboard/generate-keys.js
+lockedin-dashboard/set-keys.ps1
+lockedin-dashboard/test-login.js

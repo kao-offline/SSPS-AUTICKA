@@ -1,11 +1,15 @@
+import { getConvexUrl } from '@/lib/convex-url';
 import { ConvexHttpClient } from 'convex/browser';
-import { api } from '../../../convex/_generated/api';
+import { api } from '../../../../convex/_generated/api';
+import { apiErrorStatus, apiErrorMessage } from '@/lib/api-errors';
 import { NextRequest, NextResponse } from 'next/server';
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL || '');
-
 export async function POST(request: NextRequest) {
+  const token = request.headers.get('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (!token) return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
   try {
+    const convex = new ConvexHttpClient(getConvexUrl());
+    convex.setAuth(token);
     const { userId } = await request.json();
 
     if (!userId) {
@@ -24,8 +28,8 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Failed to clean invalid plugins:', error);
     return NextResponse.json(
-      { error: String(error) },
-      { status: 500 }
+      { error: 'Plugin cleanup failed' },
+      { status: apiErrorStatus(error) }
     );
   }
 }

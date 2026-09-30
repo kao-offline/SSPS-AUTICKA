@@ -1,3 +1,4 @@
+import { checkAuthenticated } from "./permissions";
 /**
  * Secured API endpoints for LockedIN Dashboard
  * All functions in this file require authentication via Convex Auth
@@ -15,21 +16,9 @@ import { checkAdmin } from "./permissions";
 export const getAllUsers = query({
     args: {},
     handler: async (ctx) => {
-        const userId = await getAuthUserId(ctx);
-        if (userId === null) {
-            throw new Error("Unauthorized: Authentication required");
-        }
-
-        // Get the current user to check permissions
-        const currentUser = await ctx.db.get(userId);
-        if (!currentUser) {
-            throw new Error("User not found");
-        }
-
-        // TODO: Add admin role check here if needed
-        // For now, any authenticated user can see all users
-
-        return await ctx.db.query("usrs").collect();
+        await checkAuthenticated(ctx);
+        await checkAdmin(ctx);
+        return await ctx.db.query("users").collect();
     },
 });
 
@@ -40,6 +29,7 @@ export const getAllUsers = query({
 export const getAllPlugins = query({
     args: {},
     handler: async (ctx) => {
+        await checkAuthenticated(ctx);
         const userId = await getAuthUserId(ctx);
         if (userId === null) {
             throw new Error("Unauthorized: Authentication required");
@@ -56,6 +46,7 @@ export const getAllPlugins = query({
 export const getAllSpaces = query({
     args: {},
     handler: async (ctx) => {
+        await checkAuthenticated(ctx);
         const userId = await getAuthUserId(ctx);
         if (userId === null) {
             throw new Error("Unauthorized: Authentication required");
@@ -75,6 +66,7 @@ export const updateSpaceStatus = mutation({
         isFull: v.boolean(),
     },
     handler: async (ctx, args) => {
+        await checkAuthenticated(ctx);
         const userId = await getAuthUserId(ctx);
         if (userId === null) {
             throw new Error("Unauthorized: Authentication required");
@@ -103,6 +95,7 @@ export const deleteUser = mutation({
         userId: v.string(),
     },
     handler: async (ctx, args) => {
+        await checkAuthenticated(ctx);
         // Admin check
         await checkAdmin(ctx);
 
@@ -122,6 +115,7 @@ export const updateUser = mutation({
         usrData: v.string(),
     },
     handler: async (ctx, args) => {
+        await checkAuthenticated(ctx);
         // Admin check
         await checkAdmin(ctx);
 

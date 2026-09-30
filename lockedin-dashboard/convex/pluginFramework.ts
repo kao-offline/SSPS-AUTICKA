@@ -1,4 +1,6 @@
-import { mutation, action, query } from "./_generated/server";
+import { checkAuthenticated, checkAdmin, checkPluginAccess } from "./permissions";
+import { getAuthUserId } from "@convex-dev/auth/server";
+import { mutation, action, query, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 
 /**
@@ -22,6 +24,8 @@ export const setPluginData = mutation({
     value: v.string(), // JSON stringified value
   },
   handler: async (ctx, args) => {
+    await checkPluginAccess(ctx, args.pluginName);
+
     const { pluginName, key, value } = args;
     const now = Date.now();
 
@@ -62,6 +66,8 @@ export const getPluginData = query({
     key: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkPluginAccess(ctx, args.pluginName);
+
     const { pluginName, key } = args;
     
     const data = await ctx.db
@@ -83,6 +89,8 @@ export const getAllPluginData = query({
     pluginName: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkPluginAccess(ctx, args.pluginName);
+
     const { pluginName } = args;
     
     const data = await ctx.db
@@ -103,6 +111,8 @@ export const deletePluginData = mutation({
     key: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkPluginAccess(ctx, args.pluginName);
+
     const { pluginName, key } = args;
     
     const data = await ctx.db
@@ -128,6 +138,8 @@ export const clearAllPluginData = mutation({
     pluginName: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkPluginAccess(ctx, args.pluginName);
+
     const { pluginName } = args;
     
     const data = await ctx.db
@@ -159,6 +171,8 @@ export const storePluginFile = action({
     metadata: v.optional(v.string()), // JSON stringified metadata
   },
   handler: async (ctx, args) => {
+    await checkPluginAccess(ctx, args.pluginName);
+
     const { pluginName, fileName, fileData, mimeType, metadata } = args;
     const now = Date.now();
 
@@ -192,7 +206,7 @@ export const storePluginFile = action({
         await ctx.storage.delete(existing.fileId);
         
         // Update file record
-        await ctx.runMutation(api.pluginFramework.updatePluginFile, {
+        await ctx.runMutation(internal.pluginFramework.updatePluginFile, {
           fileRecordId: existing._id,
           fileId,
           size,
@@ -203,7 +217,7 @@ export const storePluginFile = action({
         return existing._id;
       } else {
         // Create new file record
-        return await ctx.runMutation(api.pluginFramework.createPluginFileRecord, {
+        return await ctx.runMutation(internal.pluginFramework.createPluginFileRecord, {
           pluginName,
           fileName,
           fileId,
@@ -223,7 +237,7 @@ export const storePluginFile = action({
 /**
  * Create plugin file record (internal mutation)
  */
-export const createPluginFileRecord = mutation({
+export const createPluginFileRecord = internalMutation({
   args: {
     pluginName: v.string(),
     fileName: v.string(),
@@ -242,7 +256,7 @@ export const createPluginFileRecord = mutation({
 /**
  * Update plugin file record (internal mutation)
  */
-export const updatePluginFile = mutation({
+export const updatePluginFile = internalMutation({
   args: {
     fileRecordId: v.id("pluginFiles"),
     fileId: v.id("_storage"),
@@ -265,6 +279,8 @@ export const getPluginFileByName = query({
     fileName: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkPluginAccess(ctx, args.pluginName);
+
     const { pluginName, fileName } = args;
     
     return await ctx.db
@@ -284,6 +300,8 @@ export const getAllPluginFiles = query({
     pluginName: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkPluginAccess(ctx, args.pluginName);
+
     const { pluginName } = args;
     
     return await ctx.db
@@ -302,6 +320,8 @@ export const getPluginFileUrl = query({
     fileName: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkPluginAccess(ctx, args.pluginName);
+
     const { pluginName, fileName } = args;
     
     const file = await ctx.db
@@ -332,6 +352,8 @@ export const deletePluginFile = action({
     fileName: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkPluginAccess(ctx, args.pluginName);
+
     const { pluginName, fileName } = args;
     
     const file = await ctx.runQuery(api.pluginFramework.getPluginFileByName, {
@@ -344,7 +366,7 @@ export const deletePluginFile = action({
       await ctx.storage.delete(file.fileId);
       
       // Delete file record
-      await ctx.runMutation(api.pluginFramework.deletePluginFileRecord, {
+      await ctx.runMutation(internal.pluginFramework.deletePluginFileRecord, {
         fileRecordId: file._id,
       });
       
@@ -357,7 +379,7 @@ export const deletePluginFile = action({
 /**
  * Delete plugin file record (internal mutation)
  */
-export const deletePluginFileRecord = mutation({
+export const deletePluginFileRecord = internalMutation({
   args: {
     fileRecordId: v.id("pluginFiles"),
   },
@@ -374,6 +396,8 @@ export const clearAllPluginFiles = action({
     pluginName: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkPluginAccess(ctx, args.pluginName);
+
     const { pluginName } = args;
     
     const files = await ctx.runQuery(api.pluginFramework.getAllPluginFiles, {
@@ -385,7 +409,7 @@ export const clearAllPluginFiles = action({
       await ctx.storage.delete(file.fileId);
       
       // Delete file record
-      await ctx.runMutation(api.pluginFramework.deletePluginFileRecord, {
+      await ctx.runMutation(internal.pluginFramework.deletePluginFileRecord, {
         fileRecordId: file._id,
       });
     }
@@ -404,6 +428,8 @@ export const clearAllPluginFiles = action({
 export const getCurrentUserProfile = query({
   args: {},
   handler: async (ctx) => {
+    await checkAuthenticated(ctx);
+
     const identity = await ctx.auth.getUserIdentity();
     
     if (!identity) {
@@ -453,6 +479,9 @@ export const getUserProfileByUsername = query({
     username: v.string(),
   },
   handler: async (ctx, args) => {
+    const caller = await checkAuthenticated(ctx);
+    if (args.username && args.username !== caller.username && args.username !== caller.email) await checkAdmin(ctx);
+
     const user = await ctx.db
       .query("users")
       .withIndex("username", (q) => q.eq("username", args.username))
@@ -497,6 +526,9 @@ export const userHasRole = query({
     requiredRole: v.string(),
   },
   handler: async (ctx, args) => {
+    const caller = await checkAuthenticated(ctx);
+    if (args.username && args.username !== caller.username && args.username !== caller.email) await checkAdmin(ctx);
+
     let user;
     
     if (args.username) {
@@ -548,6 +580,9 @@ export const userHasPermission = query({
     permission: v.string(),
   },
   handler: async (ctx, args) => {
+    const caller = await checkAuthenticated(ctx);
+    if (args.username && args.username !== caller.username && args.username !== caller.email) await checkAdmin(ctx);
+
     let user;
     
     if (args.username) {
@@ -602,6 +637,8 @@ export const registerPluginApiEndpoints = mutation({
     endpoints: v.array(v.string()),
   },
   handler: async (ctx, args) => {
+    await checkAdmin(ctx);
+
     const { pluginName, endpoints } = args;
     
     const plugin = await ctx.db
@@ -662,6 +699,8 @@ export const publishSharedData = mutation({
     allowedPlugins: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
+    await checkPluginAccess(ctx, args.ownerPlugin);
+
     const now = Date.now();
 
     if (args.visibility === "private" && !args.targetPlugin) {
@@ -713,6 +752,8 @@ export const readSharedChannelData = query({
     channel: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkPluginAccess(ctx, args.requesterPlugin);
+
     const records = await ctx.db
       .query("pluginSharedData")
       .withIndex("by_channel", (q) => q.eq("channel", args.channel))
@@ -741,6 +782,8 @@ export const readSharedDataByKey = query({
     key: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkPluginAccess(ctx, args.requesterPlugin);
+
     const record = await ctx.db
       .query("pluginSharedData")
       .withIndex("by_owner_and_key", (q) =>
@@ -768,6 +811,8 @@ export const deleteSharedData = mutation({
     key: v.string(),
   },
   handler: async (ctx, args) => {
+    await checkPluginAccess(ctx, args.ownerPlugin);
+
     const record = await ctx.db
       .query("pluginSharedData")
       .withIndex("by_owner_and_key", (q) =>
@@ -782,4 +827,4 @@ export const deleteSharedData = mutation({
 });
 
 // Import api for use in action handlers
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";

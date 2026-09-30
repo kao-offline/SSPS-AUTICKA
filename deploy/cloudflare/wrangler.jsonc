@@ -1,0 +1,9 @@
+{
+  "name": "lockedin-domain",
+  "main": "worker.mjs",
+  "account_id": "1301c6d21f502cc4cbd592b0028651a3",
+  "compatibility_date": "2026-09-30",
+  "workers_dev": false,
+  "routes": [{ "pattern": "li.kaooffline.top/*", "zone_name": "kaooffline.top" }],
+  "vars": { "ORIGIN": "https://ssps-auticka.vercel.app" }
+}

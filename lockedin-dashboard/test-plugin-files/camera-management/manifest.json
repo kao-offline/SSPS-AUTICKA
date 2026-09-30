@@ -1,0 +1,11 @@
+{
+  "name": "camera-management",
+  "version": "2.0.0",
+  "author": "LockedIN Team",
+  "description": "Multi-screen camera manager with HeroUI, RBAC, and RTSP proxy support. Admins can connect and configure cameras, users can view and maximize feeds.",
+  "main": "core.js",
+  "iconLight": "icon-light-camera.svg",
+  "iconDark": "icon-dark-camera.svg",
+  "apiEndpoints": ["getCameraList", "getCameraFeed", "updateCameraConfig", "onStreamFrame", "emitStreamFrame"],
+  "permissions": ["read", "write"]
+}

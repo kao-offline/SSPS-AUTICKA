@@ -1,48 +1,27 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../auth-context';
-import { getNavigationItems, getPageComponent, registerPage, createPageComponent } from './nav-config';
+import { getNavigationItems, getPageComponent, registerPage, createPageComponent, pageRegistry } from './nav-config';
 import { initializeAllPages } from './page-initializer';
 import { PluginLoader, getPluginEmoji } from './plugin-loader';
 import { BackgroundPluginManager } from './background-plugin-manager';
-import { useQuery } from 'convex/react';
+import { useQuery, useConvex } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import styles from './dashboard.module.css';
 import Image from 'next/image';
 import { DashboardSidebar } from '@/components/dashboard-sidebar';
-
-// Component to render plugin icons dynamically
-function PluginIcon({ pluginName, fallback }: { pluginName: string, fallback: string }) {
-  const iconUrl = useQuery(api.context.getPluginIconUrl, { pluginName });
-
-  // Handle specific icon mappings
-  const iconMap: Record<string, string> = {
-    'counter': '/media/counter.svg',
-    'icon-counter': '/media/counter.svg'
-  };
-
-  // Check if we have a direct mapping
-  if (iconMap[pluginName]) {
-    return <img src={iconMap[pluginName]} alt={`${pluginName} icon`} style={{ width: '28px', height: '28px' }} />;
-  }
-
-  if (iconUrl) {
-    return <img src={iconUrl} alt={`${pluginName} icon`} style={{ width: '28px', height: '28px' }} />;
-  }
-
-  return <span>{fallback}</span>;
-}
+import { PluginIcon } from '@/components/plugin-icon';
 
 interface UserData {
+
   role?: string;
   createdAt?: string;
   permissions?: string[];
   isActive?: boolean;
   plugins?: string; // Comma-separated list of plugin names
 }
-
 interface NavigationItem {
   id: string;
   label: string;
@@ -59,8 +38,9 @@ interface PluginRedirectEventDetail {
 }
 
 export default function DashboardPage() {
-  const { isAuthenticated, username, userData, logout, isLoading } = useAuth();
+  const { isAuthenticated, username, userData, logout, isLoading, userImage, userId } = useAuth();
   const router = useRouter();
+  const convexClient = useConvex();
   const [navItems, setNavItems] = useState<NavigationItem[]>([]);
   const [activePage, setActivePage] = useState<string>('welcome');
   const [pluginsLoaded, setPluginsLoaded] = useState(false);
@@ -101,7 +81,7 @@ export default function DashboardPage() {
       });
       
       // Only block if isApproved is explicitly false
-      if (userData.isApproved === false) {
+      if (userData.isApproved === false || userData.isActive === false) {
         console.warn('Unapproved user attempted to access dashboard:', username);
         setAuthVerified(false);
         logout();
@@ -166,55 +146,56 @@ export default function DashboardPage() {
 
   // Load user plugins and register them as pages - with proper dependency management
   useEffect(() => {
-    if (userPlugins && !pluginsLoaded && userPluginNames.length > 0) {
-      console.log('Loading user plugins:', userPlugins);
+    if (!userData) {
+      return;
+    }
 
-      // Register each plugin as a page component
-      userPlugins.forEach((plugin: { name: string, iconFileId?: string }) => {
-        // Create a wrapper component for the plugin
-        const PluginComponent = ({ username, userData }: { username?: string, userData?: UserData }) => (
-          <PluginLoader
-            pluginName={plugin.name}
-            username={username}
-            userData={userData as Record<string, unknown>}
-          />
-        );
+    // Wait for plugin query when the user has assignments.
+    if (userPluginNames.length > 0 && !userPlugins) {
+      return;
+    }
 
-        // Register the plugin as a page with dynamic icon
-        const pluginPage = createPageComponent(
-          `plugin-${plugin.name}`,
-          plugin.name,
-          plugin.iconFileId ? `icon-${plugin.name}` : getPluginEmoji(plugin.name), // Use icon ID for dynamic loading
-          PluginComponent,
-          [] // No specific permissions required for user's own plugins
-        );
-
-        registerPage(pluginPage);
+    // Remove all previously registered plugin pages so sidebar and manage menu update immediately.
+    getNavigationItems()
+      .filter((item) => item.id.startsWith('plugin-'))
+      .forEach((item) => {
+        pageRegistry.removePage(item.id);
       });
 
-      setPluginsLoaded(true);
-    }
-  }, [userPlugins, userPluginNames, pluginsLoaded]);
+    // Ensure built-in pages remain available.
+    initializeAllPages();
 
-  // Handle case where user has no plugins (set pluginsLoaded to true immediately)
-  useEffect(() => {
-    if (!pluginsLoaded && userData && userPluginNames.length === 0) {
-      // Register default pages immediately since we don't have plugins to wait for
-      initializeAllPages();
-      setPluginsLoaded(true);
-    }
-  }, [pluginsLoaded, userData, userPluginNames]);
+    const pluginsToRegister = userPlugins ?? [];
+    console.log('Syncing user plugins:', pluginsToRegister.map((plugin: { name: string }) => plugin.name));
+
+    pluginsToRegister.forEach((plugin: { name: string, iconFileId?: string, iconLightFileId?: string, iconDarkFileId?: string }) => {
+      const PluginComponent = ({ username, userData }: { username?: string, userData?: UserData }) => (
+        <PluginLoader
+          pluginName={plugin.name}
+          username={username}
+          userData={userData as Record<string, unknown>}
+        />
+      );
+
+      const pluginPage = createPageComponent(
+        `plugin-${plugin.name}`,
+        plugin.name,
+        plugin.iconFileId || plugin.iconLightFileId || plugin.iconDarkFileId ? `icon-${plugin.name}` : getPluginEmoji(plugin.name),
+        PluginComponent,
+        []
+      );
+
+      registerPage(pluginPage);
+    });
+
+    setPluginsLoaded(true);
+  }, [userData, userPlugins, userPluginNames]);
 
   // Expose dashboard context to plugins - run only once on mount
   useEffect(() => {
     // Make dashboard context available to plugins
     if (typeof window !== 'undefined') {
-      // Create Convex client for plugins (using dynamic import)
-      import('convex/browser').then(({ ConvexHttpClient }) => {
-        (window as unknown as Record<string, unknown>).convexClient = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL || 'https://modest-pig-521.convex.cloud');
-      }).catch(error => {
-        console.error('Failed to load Convex client:', error);
-      });
+      (window as unknown as Record<string, unknown>).convexClient = convexClient;
 
       // Create a stable refresh function that doesn't cause loops
       const createRefreshFunction = () => {
@@ -224,7 +205,7 @@ export default function DashboardPage() {
             const allItems = getNavigationItems();
             const filteredItems = allItems.filter(item => {
               // Skip emergency/hard-coded pages from main navigation
-              if (item.id === 'admin-accounts' || item.id === 'plugin-publisher' || item.id === 'admin-approvals' || item.id === 'admin-api-keys') {
+              if (item.id === 'admin-accounts' || item.id === 'plugin-publisher' || item.id === 'admin-api-keys' || item.id === 'admin-servers' || item.id === 'admin-server-marketplace' || item.id === 'admin-server-plugins') {
                 return false;
               }
 
@@ -262,7 +243,7 @@ export default function DashboardPage() {
       // Make refresh function globally available
       (window as unknown as Record<string, unknown>).refreshDashboard = createRefreshFunction();
     }
-  }, [pluginsLoaded, userData, username]); // Include dependencies to prevent warnings
+  }, [pluginsLoaded, userData, username, convexClient]); // Include dependencies to prevent warnings
 
   // Initialize pages and navigation - run only when plugins are loaded
   useEffect(() => {
@@ -283,7 +264,7 @@ export default function DashboardPage() {
 
       const filteredItems = allItems.filter(item => {
         // Skip emergency/hard-coded pages from main navigation
-        if (item.id === 'admin-accounts' || item.id === 'plugin-publisher' || item.id === 'admin-approvals' || item.id === 'admin-api-keys') {
+        if (item.id === 'admin-accounts' || item.id === 'plugin-publisher' || item.id === 'admin-api-keys' || item.id === 'admin-servers' || item.id === 'admin-server-marketplace' || item.id === 'admin-server-plugins') {
           return false;
         }
 
@@ -317,7 +298,7 @@ export default function DashboardPage() {
   // Auto-select first available page when navigation items change - prevent loops
   useEffect(() => {
     // Special pages that shouldn't be auto-redirected from
-    const specialPages = ['admin-accounts', 'plugin-publisher', 'admin-approvals', 'admin-api-keys'];
+    const specialPages = ['admin-accounts', 'plugin-publisher', 'admin-api-keys', 'admin-servers', 'admin-server-marketplace', 'admin-server-plugins'];
 
     if (navItems.length > 0 && activePage === 'welcome') {
       // Only auto-select if we're still on the default welcome page
@@ -325,6 +306,9 @@ export default function DashboardPage() {
     } else if (navItems.length === 0 && !specialPages.includes(activePage)) {
       // If no navigation items AND not on a special page, go to welcome
       setActivePage('welcome');
+    } else if (navItems.length > 0 && !specialPages.includes(activePage) && !navItems.some(item => item.id === activePage)) {
+      // If the current plugin/page disappeared (deleted or unassigned), move to first available page.
+      setActivePage(navItems[0].id);
     }
   }, [navItems, activePage]); // Include activePage dependency
 
@@ -454,7 +438,7 @@ export default function DashboardPage() {
             animation: 'spin 0.9s linear infinite',
             margin: '0 auto 16px'
           }}></div>
-          <p style={{ margin: 0, letterSpacing: '0.5px' }}>Ověřování přístupu...</p>
+          <p style={{ margin: 0, letterSpacing: '0.5px' }}>OvÄ›Å™ovÃ¡nÃ­ pÅ™Ã­stupu...</p>
         </div>
         <style jsx>{`
           @keyframes spin {
@@ -484,6 +468,8 @@ export default function DashboardPage() {
         activePage={activePage}
         onNavigation={setActivePage}
         username={username}
+        userId={userId}
+        userImage={userImage}
         userRole={userData?.role ? userData.role.charAt(0).toUpperCase() + userData.role.slice(1) : 'User'}
         isAdmin={userData?.role === 'admin'}
         theme={theme}
@@ -497,6 +483,7 @@ export default function DashboardPage() {
                 <PluginIcon
                   pluginName={pluginName}
                   fallback={getPluginEmoji(pluginName)}
+                  theme={theme}
                 />
               </span>
             );
@@ -514,4 +501,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

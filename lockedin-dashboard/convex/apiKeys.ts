@@ -80,6 +80,31 @@ export const revokeKey = mutation({
 });
 
 /**
+ * Permanently delete an API Key - ADMIN ONLY
+ * Safety: active keys must be revoked first.
+ */
+export const deleteKey = mutation({
+    args: {
+        id: v.id("apiKeys"),
+    },
+    handler: async (ctx, args) => {
+        await checkAdmin(ctx);
+
+        const key = await ctx.db.get(args.id);
+        if (!key) {
+            throw new Error("API key not found");
+        }
+
+        if (key.isActive) {
+            throw new Error("Active keys cannot be deleted. Revoke the key first.");
+        }
+
+        await ctx.db.delete(args.id);
+        return { success: true };
+    },
+});
+
+/**
  * Update an API Key settings - ADMIN ONLY
  */
 export const updateKey = mutation({
@@ -133,13 +158,15 @@ export function canKeyAccessEndpoint(
     }
 
     // Check if endpoint is blocked
-    if (keyRecord.blockedEndpoints?.includes(endpoint)) {
+    const normalize = (path: string) => path.trim().replace(/^\/?api\//, '').replace(/^\//, '');
+    const path = normalize(endpoint);
+    if (keyRecord.blockedEndpoints?.some((entry: string) => normalize(entry) === path)) {
         return false;
     }
 
     // Check if endpoints are restricted and endpoint is not in allowlist
     if (keyRecord.allowedEndpoints && keyRecord.allowedEndpoints.length > 0) {
-        if (!keyRecord.allowedEndpoints.includes(endpoint)) {
+        if (!keyRecord.allowedEndpoints.some((entry: string) => normalize(entry) === path)) {
             return false;
         }
     }
@@ -165,7 +192,7 @@ export async function validateKey(ctx: any, apiKey: string) {
     // Check rate limiting
     if (keyRecord.rateLimit && keyRecord.rateLimit > 0) {
         const now = Date.now();
-        const windowStart = keyRecord.rateLimitWindow || now;
+        const windowStart = keyRecord.rateLimitWindow || 0;
         const windowDuration = 60 * 1000; // 1 minute
 
         if (now - windowStart < windowDuration) {
@@ -184,8 +211,10 @@ export async function validateKey(ctx: any, apiKey: string) {
 
     // Increment request count if rate limiting is enabled
     if (keyRecord.rateLimit && keyRecord.rateLimit > 0) {
+        const newWindow = !keyRecord.rateLimitWindow || Date.now() - keyRecord.rateLimitWindow >= 60000;
         await ctx.db.patch(keyRecord._id, {
-            requestCount: (keyRecord.requestCount || 0) + 1,
+            rateLimitWindow: newWindow ? Date.now() : keyRecord.rateLimitWindow,
+            requestCount: newWindow ? 1 : (keyRecord.requestCount || 0) + 1,
             lastUsed: Date.now(),
         });
     } else {

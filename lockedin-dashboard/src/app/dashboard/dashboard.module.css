@@ -68,10 +68,10 @@
   50%       { transform: translateY(18px) translateX(-22px); }
 }
 
-/* ---- Sidebar ---------------------------------------------- */
+/* ---- Sidebar (compact) ------------------------------------ */
 .sidebar {
-  width: 300px;          /* Increased width (1.5x) */
-  min-width: 300px;
+  width: 232px;
+  min-width: 232px;
   background-color: var(--bg-sidebar);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
@@ -114,6 +114,8 @@
   height: 220px !important;
   object-fit: none;
   object-position: -220px -220px;
+  transform: scale(0.62);
+  transform-origin: top center;
   display: block;
   pointer-events: none;
   transition: opacity 0.3s ease;
@@ -124,7 +126,7 @@
 /* ---- Navigation Area -------------------------------------- */
 .navigation {
   flex: 1;
-  padding: 110px 12px 12px 12px;           /* Top padding for logo space */
+  padding: 78px 10px 10px 10px;           /* Top padding for logo space */
   overflow-y: auto;
   overflow-x: hidden;
   display: flex;
@@ -147,19 +149,19 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  height: 48px;              /* Slightly taller for more presence */
-  padding: 0 16px;
+  height: 38px;
+  padding: 0 12px;
   box-sizing: border-box;
 
   background-color: transparent;
   border: none;
-  border-radius: 12px;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   font-family: 'SF Pro', -apple-system, sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-muted);
   text-align: left;
   white-space: nowrap;
@@ -181,13 +183,13 @@
 }
 
 .navIcon {
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 15px;
   flex-shrink: 0;
   overflow: hidden;
   position: relative;
@@ -252,7 +254,7 @@
 
 .navLabel {
   flex: 1;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -280,19 +282,19 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  height: 40px;
-  padding: 0 16px;
+  height: 34px;
+  padding: 0 12px;
   box-sizing: border-box;
 
   background-color: var(--accent-blue-dim);
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.18s ease;
   font-family: 'SF Pro', sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--accent-blue);
   text-align: left;
   white-space: nowrap;
@@ -313,9 +315,9 @@
 }
 
 .managementIcon {
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -383,7 +385,7 @@
 
 .managementLabel {
   flex: 1;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -393,7 +395,7 @@
 
 .adminLabel {
   flex: 1;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -405,10 +407,10 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  height: 40px;
-  padding: 0 16px;
+  height: 34px;
+  padding: 0 12px;
   box-sizing: border-box;
 
   background-color: var(--accent-blue-dim);
@@ -642,8 +644,8 @@
 /* ---- Responsive ------------------------------------------- */
 @media (max-width: 1024px) {
   .sidebar {
-    width: 260px;
-    min-width: 260px;
+    width: 210px;
+    min-width: 210px;
   }
 }
 
